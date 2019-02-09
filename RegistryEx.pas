@@ -3,7 +3,8 @@ unit RegistryEx;
 interface
 
 uses
-  Windows, Classes;
+  Windows, Classes,
+  AuxTypes;
 
 type
   TRXKeyAccessRight = (karDelete,karReadControl,karWriteDAC,karWriteOwner,
@@ -28,7 +29,25 @@ type
                 rkPerformanceData,rkPerformanceText,rkPerformanceNLSText,
                 rkCurrentConfig,rkDynData,rkCurrentUserLocalSettings);
 
+  // note that lengths are in unicode characters, without terminating zero
   TRXKeyInfo = record
+    SubKeys:            UInt32;
+    MaxSubKeyLen:       UInt32;
+    MaxClassLen:        UInt32;
+    Values:             UInt32;
+    MaxValueNameLen:    UInt32;
+    MaxValueLen:        UInt32;
+    SecurityDescriptor: UInt32;
+    LastWriteTime:      TDateTime;
+  end;
+
+  TRXValueType = (rvtBinary,rvtDWord,rvtDWordLE = rvtDWord,rvtDWordBE,
+                  rvtExpandString,rvtLink,rvtMultiString,rvtNone,rvtQWord,
+                  rvtQWordLE = rvtQWord,rvtString,rvtUnknown);
+
+  TRXValueInfo = record
+    ValueType:  TRXValueType;
+    DataSize:   TMemSize;
   end;
 
   TRegistryEx = class(TObject)
@@ -45,7 +64,7 @@ type
     procedure SetRootKey(Value: TRXRootKey);
     procedure SetRootKeyHandle(Value: HKEY);
   protected
-    class Function IsRelativeRectified(const KeyName: String; out RectifiedKeyName: String): Boolean; virtual;
+    class Function IsRelativeGetRectified(const KeyName: String; out RectifiedKeyName: String): Boolean; virtual;
     procedure SetCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
     Function GetWorkingKey(Relative: Boolean): HKEY; virtual;
     {$message 'used only once, remove?'}
@@ -53,10 +72,14 @@ type
 
     procedure ChangingRootKey; virtual;
   public
+    class Function RegistryQuotaAllowed: UInt32; virtual;
+    class Function RegistryQuotaUsed: UInt32; virtual;
+      
     constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;
     constructor Create(RootKey: TRXRootKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
     destructor Destroy; override;
-    // global keys access
+
+    // global keys access (does not depend on open key)
     Function KeyExists(const KeyName: String): Boolean; virtual;
     Function CreateKey(const KeyName: String): Boolean; virtual;
     Function DeleteKey(const KeyName: String): Boolean; virtual;
@@ -64,15 +87,24 @@ type
     // current key access
     Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; virtual;
     Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
+    Function GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean; virtual;
+    procedure GetSubKeys(SubKeys: TStrings); virtual;
+    Function HasSubKeys: Boolean; virtual;
     procedure FlushKey; virtual;
     procedure CloseKey; virtual;
-    //Function GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean; virtual;
-    //Function HasSubKeys: Boolean; virtual;
-    //procedure GetKeyNames(KeyNames: TStrings); virtual;
+
+    Function ValueExists(const ValueName: String): Boolean; virtual;
+    procedure GetValues(Values: TStrings); virtual;
+    Function GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; virtual;
+    Function GetValueType(const ValueName: String): TRXValueType; virtual;
+    Function GetValueDataSize(const ValueName: String): TMemSize; virtual;
+    Function DeleteValue(const ValueName: String): Boolean; virtual;
+
+    procedure DeleteSubKeys; virtual;
+    procedure DeleteValues; virtual;
+    procedure DeleteContent; virtual;
 
     // current key values access
-    //procedure GetValueNames(ValueNames: TStrings); virtual;
-    //function ValueExists(const ValueName: string): Boolean;
 
     property AccessRights: TRXKeyAccessRights read fAccessRights write SetAccessRights;
     property AccessRightsSys: DWORD read fAccessRightsSys write SetAccessRightsSys;
@@ -87,10 +119,11 @@ implementation
 
 uses
   SysUtils,
-  AuxTypes, BitOps, AuxExceptions, StrRect;
+  BitOps, AuxExceptions, StrRect;
 
 type
   LSTATUS = Int32;
+  LPBYTE  = ^Byte;
 
 const
   REG_PATH_DLEIMITER = '\';
@@ -102,7 +135,63 @@ const
   HKEY_PERFORMANCE_NLSTEXT         = HKEY($80000060);
   HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
 
+  REG_QWORD               = 11;
+  REG_QWORD_LITTLE_ENDIAN = 11;
+
 Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'Shlwapi.dll';
+
+Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
+
+Function RegEnumValueW(
+  hKey:           HKEY;
+  dwIndex:        DWORD;
+  lpValueName:    LPWSTR;
+  lpcchValueName: LPDWORD;
+  lpReserved:     LPDWORD;
+  lpTyp:          LPDWORD;
+  lpData:         LPBYTE;
+  lpcbData:       LPDWORD
+): LSTATUS; stdcall; external 'Advapi32.dll';
+
+//==============================================================================
+
+Function FileTimeToDateTime(FileTime: TFileTime): TDateTime;
+var
+  LocalTime:  TFileTime;
+  SystemTime: TSystemTime;
+begin
+If FileTimeToLocalFileTime(FileTime,LocalTime) then
+  begin
+    If FileTimeToSystemTime(LocalTime,SystemTime) then
+      Result := SystemTimeToDateTime(SystemTime)
+    else
+      raise Exception.CreateFmt('FileTimeToDateTime: Unable to convert to system time (0x%.8x).',[GetLastError]);
+  end
+else raise Exception.CreateFmt('FileTimeToDateTime: Unable to convert to local time (0x%.8x).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function EncodeValueType(RegValueType: DWORD): TRXValueType;
+begin
+case RegValueType of
+  REG_BINARY:               Result := rvtBinary;
+  REG_DWORD:                Result := rvtDWord;
+//REG_DWORD_LITTLE_ENDIAN:  Result := rvtDWordLE;       // the same as REG_DWORD
+  REG_DWORD_BIG_ENDIAN:     Result := rvtDWordBE;
+  REG_EXPAND_SZ:            Result := rvtExpandString;
+  REG_LINK:                 Result := rvtLink;
+  REG_MULTI_SZ:             Result := rvtMultiString;
+  REG_NONE:                 Result := rvtNone;
+  REG_QWORD:                Result := rvtQWord;
+//REG_QWORD_LITTLE_ENDIAN:  Result := rvtQWordLE;       // the same as REG_QWORD
+  REG_SZ:                   Result := rvtString;
+else
+  Result := rvtUnknown;
+end;
+end;
+
+//==============================================================================
 
 procedure TRegistryEx.SetAccessRights(Value: TRXKeyAccessRights);
 begin
@@ -225,7 +314,7 @@ end;
 
 //==============================================================================
 
-class Function TRegistryEx.IsRelativeRectified(const KeyName: String; out RectifiedKeyName: String): Boolean;
+class Function TRegistryEx.IsRelativeGetRectified(const KeyName: String; out RectifiedKeyName: String): Boolean;
 begin
 RectifiedKeyName := KeyName;
 If Length(KeyName) > 0 then
@@ -259,7 +348,7 @@ end;
 
 Function TRegistryEx.GetWorkingKey(Relative: Boolean): HKEY;
 begin
-If (fCurrentKeyHandle = 0) or Relative then
+If (fCurrentKeyHandle = 0) or not Relative then
   Result := fRootKeyHandle
 else
   Result := fCurrentKeyHandle;
@@ -272,7 +361,7 @@ var
   TempName: String;
   Relative: Boolean;
 begin
-Relative := IsRelativeRectified(KeyName,TempName);
+Relative := IsRelativeGetRectified(KeyName,TempName);
 If RegOpenKeyExW(GetWorkingKey(Relative),PWideChar(StrToWide(TempName)),
   0,AccessRights,Result) <> ERROR_SUCCESS then
   Result := 0;
@@ -287,13 +376,39 @@ end;
 
 //==============================================================================
 
+class Function TRegistryEx.RegistryQuotaAllowed: UInt32;
+var
+  dwAllowed:  DWORD;
+  dwUsed:     DWORD;
+begin
+If GetSystemRegistryQuota(@dwAllowed,@dwUsed) then
+  Result := dwAllowed
+else
+  raise Exception.CreateFmt('TRegistryEx.RegistryQuotaAllowed: Cannot obtain registry quota (0x%.8x).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+class Function TRegistryEx.RegistryQuotaUsed: UInt32;
+var
+  dwAllowed:  DWORD;
+  dwUsed:     DWORD;
+begin
+If GetSystemRegistryQuota(@dwAllowed,@dwUsed) then
+  Result := dwUsed
+else
+  raise Exception.CreateFmt('TRegistryEx.RegistryQuotaUsed: Cannot obtain registry quota (0x%.8x).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
 constructor TRegistryEx.Create(AccessRights: TRXKeyAccessRights = karAllAccess);
 begin
 inherited Create;
 SetAccessRights(AccessRights);
 SetRootKey(rkCurrentUser);
 fCurrentKeyHandle := 0;
-fCurrentKeyName := '';
+fCurrentKeyName := '';;
 fFlushOnClose := True;
 end;
 
@@ -335,7 +450,7 @@ var
   Relative: Boolean;
   TempKey:  HKEY;
 begin
-Relative := IsRelativeRectified(KeyName,TempName);
+Relative := IsRelativeGetRectified(KeyName,TempName);
 TempKey := 0;
 If RegCreateKeyExW(GetWorkingKey(Relative),PWideChar(StrToWide(TempName)),0,nil,
      REG_OPTION_NON_VOLATILE,KEY_ALL_ACCESS,nil,TempKey,nil) = ERROR_SUCCESS then
@@ -353,8 +468,8 @@ var
   TempName: String;
   Relative: Boolean;
 begin
-Relative := IsRelativeRectified(KeyName,TempName);
-Result := SHDeleteKeyW(GetWorkingKey(Relative),PWideChar(StrToWide(KeyName))) = ERROR_SUCCESS;
+Relative := IsRelativeGetRectified(KeyName,TempName);
+Result := SHDeleteKeyW(GetWorkingKey(Relative),PWideChar(StrToWide(TempName))) = ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -365,7 +480,7 @@ var
   Relative: Boolean;
   TempKey:  HKEY;
 begin
-Relative := IsRelativeRectified(KeyName,TempName);
+Relative := IsRelativeGetRectified(KeyName,TempName);
 If CanCreate then
   Result := RegCreateKeyExW(GetWorkingKey(Relative),PWideChar(StrToWide(TempName)),0,nil,
               REG_OPTION_NON_VOLATILE,fAccessRightsSys,nil,TempKey,nil) = ERROR_SUCCESS
@@ -393,23 +508,92 @@ var
     If Result then
       begin
         OpenKeyReadOnly := True;
-        Self.SetAccessRightsSys(AccessRights);
+        SetAccessRightsSys(AccessRights);
       end;
   end;
 
 begin
-Relative := IsRelativeRectified(KeyName,TempName);
+Relative := IsRelativeGetRectified(KeyName,TempName);
 TempFlags := fAccessRightsSys and (KEY_WOW64_32KEY or KEY_WOW64_64KEY);
+Result := False;
 If not TryOpenKeyWithRights(KEY_READ or TempFlags) then
-  // do nothing
-else If TryOpenKeyWithRights(STANDARD_RIGHTS_READ or KEY_QUERY_VALUE or KEY_ENUMERATE_SUB_KEYS or TempFlags) then
-  // do nothing
-else If TryOpenKeyWithRights(KEY_QUERY_VALUE or TempFlags) then
-  // do nothing
-else
-  Result := False;
+  If not TryOpenKeyWithRights(STANDARD_RIGHTS_READ or KEY_QUERY_VALUE or KEY_ENUMERATE_SUB_KEYS or TempFlags) then
+    TryOpenKeyWithRights(KEY_QUERY_VALUE or TempFlags);
 If Result then
   SetCurrentKey(TempKey,TempName);            
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean;
+var
+  SubKeys:            DWORD;
+  MaxSubKeyLen:       DWORD;
+  MaxClassLen:        DWORD;
+  Values:             DWORD;
+  MaxValueNameLen:    DWORD;
+  MaxValueLen:        DWORD;
+  SecurityDescriptor: DWORD;
+  LastWriteTime:      TFileTime;
+begin
+FillChar(KeyInfo,SizeOf(TRXKeyInfo),0);
+If RegQueryInfoKeyW(fCurrentKeyHandle,nil,nil,nil,@SubKeys,@MaxSubKeyLen,@MaxClassLen,
+     @Values,@MaxValueNameLen,@MaxValueLen,@SecurityDescriptor,@LastWriteTime) = ERROR_SUCCESS then
+  begin
+    KeyInfo.SubKeys            := UInt32(SubKeys);
+    KeyInfo.MaxSubKeyLen       := UInt32(MaxSubKeyLen);
+    KeyInfo.MaxClassLen        := UInt32(MaxClassLen);
+    KeyInfo.Values             := UInt32(Values);
+    KeyInfo.MaxValueNameLen    := UInt32(MaxValueNameLen);
+    KeyInfo.MaxValueLen        := UInt32(MaxValueLen);
+    KeyInfo.SecurityDescriptor := UInt32(SecurityDescriptor);
+    KeyInfo.LastWriteTime      := FileTimeToDateTime(LastWriteTime);
+    Result := True;
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.GetSubKeys(SubKeys: TStrings);
+var
+  KeyInfo:  TRXKeyInfo;
+  i:        Integer;
+  TempStr:  WideString;
+  Len:      DWORD;
+begin
+SubKeys.Clear;
+If GetKeyInfo(KeyInfo) then
+  begin
+    SetLength(TempStr,KeyInfo.MaxSubKeyLen + 1);
+    i := Pred(Integer(KeyInfo.SubKeys));
+    while i >= 0 do
+      begin
+        Len := Length(TempStr);
+        case RegEnumKeyExW(fCurrentKeyHandle,DWORD(i),PWideChar(TempStr),Len,nil,nil,nil,nil) of
+          ERROR_SUCCESS:
+            SubKeys.Add(WideToStr(Copy(TempStr,1,Len)));
+          ERROR_MORE_DATA:
+            begin
+              SetLength(TempStr,Length(TempStr) * 2);
+              Inc(i);
+            end;
+        else
+         {ERROR_NO_MORE_ITEMS}
+          i := 0;
+        end;
+        Dec(i);
+      end;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.HasSubKeys: Boolean;
+var
+  KeyInfo:  TRXKeyInfo;
+begin
+Result := GetKeyInfo(KeyInfo) and (KeyInfo.SubKeys > 0);
 end;
 
 //------------------------------------------------------------------------------
@@ -432,6 +616,140 @@ If fCurrentKeyHandle <> 0 then
   end;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ValueExists(const ValueName: String): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+Result := GetValueInfo(ValueName,ValueInfo);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.GetValues(Values: TStrings);
+var
+  KeyInfo:  TRXKeyInfo;
+  i:        Integer;
+  TempStr:  WideString;
+  Len:      DWORD;
+begin
+Values.Clear;
+If GetKeyInfo(KeyInfo) then
+  begin
+    SetLength(TempStr,KeyInfo.MaxValueNameLen + 1);
+    i := Pred(Integer(KeyInfo.Values));
+    while i >= 0 do
+      begin
+        Len := Length(TempStr);
+        case RegEnumValueW(fCurrentKeyHandle,DWORD(i),PWideChar(TempStr),@Len,nil,nil,nil,nil) of
+          ERROR_SUCCESS:
+            Values.Add(WideToStr(Copy(TempStr,1,Len)));
+          ERROR_MORE_DATA:
+            begin
+              SetLength(TempStr,Length(TempStr) * 2);
+              Inc(i);
+            end;
+        else
+         {ERROR_NO_MORE_ITEMS}
+          i := 0;
+        end;
+        Dec(i);
+      end;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean;
+var
+  ValueType:  DWORD;
+  DataSize:   DWORD;
+begin
+FillChar(ValueInfo,SizeOf(TRXValueInfo),0);
+If RegQueryValueExW(fCurrentKeyHandle,PWideChar(StrToWide(ValueName)),
+     nil,@ValueType,nil,@DataSize) = ERROR_SUCCESS then
+  begin
+    ValueInfo.ValueType := EncodeValueType(ValueType);
+    ValueInfo.DataSize := TMemSize(DataSize);
+    Result := True;
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetValueType(const ValueName: String): TRXValueType;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+If GetValueInfo(ValueName,ValueInfo) then
+  Result := ValueInfo.ValueType
+else
+  raise Exception.CreateFmt('TRegistryEx.GetValueType: Cannot obtain value info (0x%.8x).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetValueDataSize(const ValueName: String): TMemSize;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+If GetValueInfo(ValueName,ValueInfo) then
+  Result := ValueInfo.DataSize
+else
+  raise Exception.CreateFmt('TRegistryEx.GetValueDataSize: Cannot obtain value info (0x%.8x).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.DeleteValue(const ValueName: String): Boolean;
+begin
+Result := RegDeleteValueW(fCurrentKeyHandle,PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteSubKeys;
+var
+  SubKeys:  TStringList;
+  i:        Integer;
+begin
+SubKeys := TStringList.Create;
+try
+  GetSubKeys(SubKeys);
+  For i := 0 to Pred(SubKeys.Count) do
+    DeleteKey(fCurrentKeyName + REG_PATH_DLEIMITER + SubKeys[i]);
+finally
+  SubKeys.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteValues;
+var
+  Values: TStringList;
+  i:      Integer;
+begin
+Values := TStringList.Create;
+try
+  GetValues(Values);
+  For i := 0 to Pred(Values.Count) do
+    DeleteValue(Values[i]);
+finally
+  Values.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteContent;
+begin
+DeleteSubKeys;
+DeleteValues;
 end;
 
 end.
