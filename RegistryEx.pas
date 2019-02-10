@@ -1,5 +1,7 @@
 unit RegistryEx;
 
+{$DEFINE NewFeatures}
+
 interface
 
 uses
@@ -49,6 +51,9 @@ type
     DataSize:   TMemSize;
   end;
 
+  // todo
+  //  RegNotifyChangeKeyValue
+
   TRegistryEx = class(TObject)
   private
     fAccessRights:      TRXKeyAccessRights;
@@ -66,11 +71,8 @@ type
     class Function IsRelativeGetRectified(const KeyName: String; out RectifiedKeyName: String): Boolean; virtual;
     procedure SetCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
     Function GetWorkingKey(Relative: Boolean): HKEY; virtual;
-    {$message 'used only once, remove?'}
-    Function OpenKeyInternal(const KeyName: String; AccessRights: DWORD): HKEY; virtual;
-
+    Function OpenKeyInternal(const KeyName: String; AccessRights: DWORD): HKEY; overload; virtual;
     procedure ChangingRootKey; virtual;
-
     procedure SetValueData(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure SetValueData(const ValueName: String; Data: Integer); overload; virtual;
     Function GetValueData(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
@@ -83,10 +85,23 @@ type
     constructor Create(RootKey: TRXRootKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
     destructor Destroy; override;
 
+    //Function ConnectRegistry(const MachineName: String): Boolean; virtual;
+    //Function DisablePredefinedCache: Boolean; virtual;
+
     // global keys access (does not depend on open key)
     Function KeyExists(const KeyName: String): Boolean; virtual;
     Function CreateKey(const KeyName: String): Boolean; virtual;
     Function DeleteKey(const KeyName: String): Boolean; virtual;
+
+    Function CopyKey(const SrcKey, DestKey: String): Boolean; virtual;
+    Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
+
+    //Function SaveKey(const Key, FileName: string): Boolean; virtual;
+    //Function LoadKey(const Key, FileName: string): Boolean; virtual;
+    //RegReplaceKey
+    //RegRestoreKey
+    //UnLoadKey
+
 
     // current key access
     Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; virtual;
@@ -97,11 +112,18 @@ type
     procedure FlushKey; virtual;
     procedure CloseKey; virtual;
 
+    //Function DisableReflection: Boolean; virtual;
+    //Function EnableReflection: Boolean; virtual;
+    // RegQueryReflection +^ -> make to property
+
+    //Function OverridePredefKey(RootKey: TRXRootKey): Boolean; virtual;
+
     Function ValueExists(const ValueName: String): Boolean; virtual;
     procedure GetValues(Values: TStrings); virtual;
     Function GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; virtual;
     Function GetValueType(const ValueName: String): TRXValueType; virtual;
     Function GetValueDataSize(const ValueName: String): TMemSize; virtual;
+    Function RenameValue(const OldName, NewName: String): Boolean; virtual;
     Function DeleteValue(const ValueName: String): Boolean; virtual;
 
     procedure DeleteSubKeys; virtual;
@@ -240,6 +262,7 @@ const
   REG_QWORD_LITTLE_ENDIAN = 11;
 
 Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'Shlwapi.dll';
+Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'Shlwapi.dll';
 
 Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
 
@@ -647,6 +670,43 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.CopyKey(const SrcKey, DestKey: String): Boolean;
+var
+  Source:       HKEY;
+  Destination:  HKEY;
+begin
+{$message 'reimplement - do not use SHCopyKeyW, it is recursive and might co into infinite cycle'}
+Result := False;
+If KeyExists(SrcKey) and not KeyExists(DestKey) then
+  begin
+    CreateKey(DestKey);
+    Source := OpenKeyInternal(SrcKey,fAccessRightsSys);
+    Destination := OpenKeyInternal(DestKey,fAccessRightsSys);
+    If Source <> 0 then
+    try
+      If Destination <> 0 then
+      try
+        Result := SHCopyKeyW(Source,nil,Destination,0) = ERROR_SUCCESS;
+      finally
+        RegCloseKey(Destination);
+      end;
+    finally
+      RegCloseKey(Source);
+    end;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveKey(const SrcKey, DestKey: String): Boolean;
+begin
+Result := False;
+If CopyKey(SrcKey,DestKey) then
+  Result := DeleteKey(SrcKey);
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.OpenKey(const KeyName: String; CanCreate: Boolean): Boolean;
 var
   TempName: String;
@@ -871,6 +931,32 @@ If GetValueInfo(ValueName,ValueInfo) then
   Result := ValueInfo.DataSize
 else
   raise Exception.CreateFmt('TRegistryEx.GetValueDataSize: Cannot obtain value info (0x%.8x).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.RenameValue(const OldName, NewName: String): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+  Buffer:     Pointer;
+begin
+Result := False;
+If ValueExists(OldName) and not ValueExists(NewName) then
+  If GetValueInfo(OldName,ValueInfo) then
+    If ValueInfo.DataSize > 0 then
+      begin
+        GetMem(Buffer,ValueInfo.DataSize);
+        try
+          If GetValueData(OldName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType) then
+            If DeleteValue(OldName) then
+              begin
+                SetValueData(NewName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType);
+                Result := True;
+              end;
+        finally
+          FreeMem(Buffer,ValueInfo.DataSize);
+        end;
+      end;
 end;
 
 //------------------------------------------------------------------------------
