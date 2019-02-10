@@ -71,10 +71,10 @@ type
 
     procedure ChangingRootKey; virtual;
 
-    procedure SetValue(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
-    procedure SetValue(const ValueName: String; Data: Integer); overload; virtual;
-    Function GetValue(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
-    Function GetValue(const ValueName: String; Data: Integer; ValueType: TRXValueType): Boolean; overload; virtual;
+    procedure SetValueData(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure SetValueData(const ValueName: String; Data: Integer); overload; virtual;
+    Function GetValueData(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function GetValueData(const ValueName: String; out Data: Integer): Boolean; overload; virtual;
   public
     class Function RegistryQuotaAllowed: UInt32; virtual;
     class Function RegistryQuotaUsed: UInt32; virtual;
@@ -135,7 +135,7 @@ type
     procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); virtual;
     procedure WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
     procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
-(*
+
     Function TryReadBool(const ValueName: String; out Value: Boolean): Boolean; virtual;
     Function TryReadInt8(const ValueName: String; out Value: Int8): Boolean; virtual;
     Function TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean; virtual;
@@ -155,13 +155,58 @@ type
     Function TryReadDate(const ValueName: String; out Value: TDateTime): Boolean; virtual;
     Function TryReadTime(const ValueName: String; out Value: TDateTime): Boolean; virtual;
 
-    Function TryReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): Boolean; virtual;
-    Function TryReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): Boolean; virtual;
+    Function TryReadString(const ValueName: String; out Value: String): Boolean; virtual;
+
+    Function TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean; virtual;
+    Function TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean; virtual;
     Function TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean; virtual;
 
     Function ReadBoolDef(const ValueName: String; Default: Boolean): Boolean; virtual;
+    Function ReadInt8Def(const ValueName: String; Default: Int8): Int8; virtual;
+    Function ReadUInt8Def(const ValueName: String; Default: UInt8): UInt8; virtual;
+    Function ReadInt16Def(const ValueName: String; Default: Int16): Int16; virtual;
+    Function ReadUInt16Def(const ValueName: String; Default: UInt16): UInt16; virtual;
+    Function ReadInt32Def(const ValueName: String; Default: Int32): Int32; virtual;
+    Function ReadUInt32Def(const ValueName: String; Default: UInt32): UInt32; virtual;
+    Function ReadInt64Def(const ValueName: String; Default: Int64): Int64; virtual;
+    Function ReadUInt64Def(const ValueName: String; Default: UInt64): UInt64; virtual;
+    Function ReadIntegerDef(const ValueName: String; Default: Integer): Integer; virtual;
+
+    Function ReadFloat32Def(const ValueName: String; Default: Float32): Float32; virtual;
+    Function ReadFloat64Def(const ValueName: String; Default: Float64): Float64; virtual;
+    Function ReadFloatDef(const ValueName: String; Default: Double): Double; virtual;
+
+    Function ReadDateTimeDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
+    Function ReadDateDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
+    Function ReadTimeDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
+
+    Function ReadStringDef(const ValueName: String; const Default: String): String; virtual;
+
     Function ReadBool(const ValueName: String): Boolean; virtual;
-*)
+    Function ReadInt8(const ValueName: String): Int8; virtual;
+    Function ReadUInt8(const ValueName: String): UInt8; virtual;
+    Function ReadInt16(const ValueName: String): Int16; virtual;
+    Function ReadUInt16(const ValueName: String): UInt16; virtual;
+    Function ReadInt32(const ValueName: String): Int32; virtual;
+    Function ReadUInt32(const ValueName: String): UInt32; virtual;
+    Function ReadInt64(const ValueName: String): Int64; virtual;
+    Function ReadUInt64(const ValueName: String): UInt64; virtual;
+    Function ReadInteger(const ValueName: String): Integer; virtual;
+
+    Function ReadFloat32(const ValueName: String): Float32; virtual;
+    Function ReadFloat64(const ValueName: String): Float64; virtual;
+    Function ReadFloat(const ValueName: String): Double; virtual;
+
+    Function ReadDateTime(const ValueName: String): TDateTime; virtual;
+    Function ReadDate(const ValueName: String): TDateTime; virtual;
+    Function ReadTime(const ValueName: String): TDateTime; virtual;
+
+    Function ReadString(const ValueName: String): String; virtual;
+
+    Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; virtual;
+    Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; virtual;
+    Function ReadBinaryStream(const ValueName: String; Stream: TStream): TMemSize; virtual;
+
     property AccessRights: TRXKeyAccessRights read fAccessRights write SetAccessRights;
     property AccessRightsSys: DWORD read fAccessRightsSys write SetAccessRightsSys;
     property RootKey: TRXRootKey read fRootKey write SetRootKey;
@@ -233,14 +278,14 @@ begin
 case RegValueType of
   REG_BINARY:               Result := rvtBinary;
   REG_DWORD:                Result := rvtDWord;
-//REG_DWORD_LITTLE_ENDIAN:  Result := rvtDWordLE;       // the same as REG_DWORD
+//REG_DWORD_LITTLE_ENDIAN:  Result := rvtDWordLE; // the same as REG_DWORD, duplicit label
   REG_DWORD_BIG_ENDIAN:     Result := rvtDWordBE;
   REG_EXPAND_SZ:            Result := rvtExpandString;
   REG_LINK:                 Result := rvtLink;
   REG_MULTI_SZ:             Result := rvtMultiString;
   REG_NONE:                 Result := rvtNone;
   REG_QWORD:                Result := rvtQWord;
-//REG_QWORD_LITTLE_ENDIAN:  Result := rvtQWordLE;       // the same as REG_QWORD
+//REG_QWORD_LITTLE_ENDIAN:  Result := rvtQWordLE; // the same as REG_QWORD, duplicit label
   REG_SZ:                   Result := rvtString;
 else
   Result := rvtUnknown;
@@ -276,22 +321,36 @@ If Value <> fAccessRights then
   begin
     fAccessRights := Value;
     fAccessRightsSys := 0;
-    // resolve individual flags
-    SetFlagStateValue(fAccessRightsSys,_DELETE,karDelete in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,READ_CONTROL,karReadControl in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,WRITE_DAC,karWriteDAC in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,WRITE_OWNER,karWriteOwner in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_CREATE_LINK,karCreateLink in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_CREATE_SUB_KEY,karCreateSubKey in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_ENUMERATE_SUB_KEYS,karEnumerateSubKeys in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_EXECUTE,karExecute <= fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_NOTIFY,karNotify in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_QUERY_VALUE,karQueryValue in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_READ,karRead <= fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_SET_VALUE,karSetValue in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_WOW64_32KEY,karWoW64_32Key in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_WOW64_64KEY,karWoW64_64Key in fAccessRights);
-    SetFlagStateValue(fAccessRightsSys,KEY_WRITE,karWrite <= fAccessRights);
+    If karDelete in fAccessRights then
+      SetFlagValue(fAccessRightsSys,_DELETE);
+    If karReadControl in fAccessRights then
+      SetFlagValue(fAccessRightsSys,READ_CONTROL);
+    If karWriteDAC in fAccessRights then
+      SetFlagValue(fAccessRightsSys,WRITE_DAC);
+    If karWriteOwner in fAccessRights then
+      SetFlagValue(fAccessRightsSys,WRITE_OWNER);
+    If karCreateLink in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_CREATE_LINK);
+    If karCreateSubKey in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_CREATE_SUB_KEY);
+    If karEnumerateSubKeys in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_ENUMERATE_SUB_KEYS);
+    If karExecute <= fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_EXECUTE);
+    If karNotify in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_NOTIFY);
+    If karQueryValue in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_QUERY_VALUE);
+    If karRead <= fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_READ);
+    If karSetValue in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_SET_VALUE);
+    If karWoW64_32Key in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_WOW64_32KEY);
+    If karWoW64_64Key in fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_WOW64_64KEY);
+    If karWrite <= fAccessRights then
+      SetFlagValue(fAccessRightsSys,KEY_WRITE);
   end;
 end;
 
@@ -302,17 +361,13 @@ procedure TRegistryEx.SetAccessRightsSys(Value: DWORD);
   procedure SetRights(Flag: TRXKeyAccessRight; Value: Boolean); overload;
   begin
     If Value then
-      Include(fAccessRights,Flag)
-    else
-      Exclude(fAccessRights,Flag);
+      Include(fAccessRights,Flag);
   end;
 
   procedure SetRights(Flags: TRXKeyAccessRights; Value: Boolean); overload;
   begin
     If Value then
-      fAccessRights := fAccessRights + Flags
-    else
-      fAccessRights := fAccessRights - Flags;
+      fAccessRights := fAccessRights + Flags;
   end;
 
 begin
@@ -320,7 +375,6 @@ If Value <> fAccessRightsSys then
   begin
     fAccessRights := [];
     fAccessRightsSys := Value;
-    // resolve individual flags
     SetRights(karDelete,GetFlagState(fAccessRightsSys,_DELETE,True));
     SetRights(karReadControl,GetFlagState(fAccessRightsSys,READ_CONTROL,True));
     SetRights(karWriteDAC,GetFlagState(fAccessRightsSys,WRITE_DAC,True));
@@ -453,36 +507,44 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.SetValue(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
+procedure TRegistryEx.SetValueData(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
 var
-  Result: LSTATUS;
+  CallResult: LSTATUS;
 begin
-Result := RegSetValueExW(fCurrentKeyHandle,PWideChar(StrToWide(ValueName)),0,DecodeValueType(ValueType),@Data,DWORD(Size));
-If Result <> ERROR_SUCCESS then
-  raise Exception.CreateFmt('TRegistryEx.SetValue: Unable to write value %s (%d).',[ValueName,Result]);
+CallResult := RegSetValueExW(fCurrentKeyHandle,PWideChar(StrToWide(ValueName)),0,DecodeValueType(ValueType),@Data,DWORD(Size));
+If CallResult <> ERROR_SUCCESS then
+  raise Exception.CreateFmt('TRegistryEx.SetValue: Unable to write value %s (%d).',[ValueName,CallResult]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-procedure TRegistryEx.SetValue(const ValueName: String; Data: Integer);
+procedure TRegistryEx.SetValueData(const ValueName: String; Data: Integer);
 var
   Temp: DWORD;
 begin
 Temp := DWORD(Data);
-SetValue(ValueName,Temp,SizeOf(DWORD),rvtDWord);
+SetValueData(ValueName,Temp,SizeOf(DWORD),rvtDWord);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.GetValue(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
+Function TRegistryEx.GetValueData(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  RegValueType: DWORD;
+  RegDataSize:  DWORD;
 begin
+Result := False;
+RegDataSize := DWORD(Size);
+If RegQueryValueExW(fCurrentKeyHandle,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize) = ERROR_SUCCESS then
+  Result := (TMemSize(RegDataSize) = Size) and ((DecodeValueType(ValueType) = RegValueType) or
+             ((ValueType = rvtString) and (RegValueType in [REG_SZ,REG_EXPAND_SZ])));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.GetValue(const ValueName: String; Data: Integer; ValueType: TRXValueType): Boolean;
+Function TRegistryEx.GetValueData(const ValueName: String; out Data: Integer): Boolean;
 begin
-Result := GetValue(ValueName,Data,SizeOf(Integer),rvtDWord);
+Result := GetValueData(ValueName,Data,SizeOf(Integer),rvtDWord);
 end;
 
 //==============================================================================
@@ -864,84 +926,84 @@ end;
 
 procedure TRegistryEx.WriteBool(const ValueName: String; Value: Boolean);
 begin
-SetValue(ValueName,Ord(Value));
+SetValueData(ValueName,Ord(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteInt8(const ValueName: String; Value: Int8);
 begin
-SetValue(ValueName,Integer(Value));
+SetValueData(ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteUInt8(const ValueName: String; Value: UInt8);
 begin
-SetValue(ValueName,Integer(Value));
+SetValueData(ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteInt16(const ValueName: String; Value: Int16);
 begin
-SetValue(ValueName,Integer(Value));
+SetValueData(ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteUInt16(const ValueName: String; Value: UInt16);
 begin
-SetValue(ValueName,Integer(Value));
+SetValueData(ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteInt32(const ValueName: String; Value: Int32);
 begin
-SetValue(ValueName,Integer(Value));
+SetValueData(ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteUInt32(const ValueName: String; Value: UInt32);
 begin
-SetValue(ValueName,Integer(Value));
+SetValueData(ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteInt64(const ValueName: String; Value: Int64);
 begin
-SetValue(ValueName,Value,SizeOf(Int64),rvtQWORD);
+SetValueData(ValueName,Value,SizeOf(Int64),rvtQWord);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteUInt64(const ValueName: String; Value: UInt64);
 begin
-SetValue(ValueName,Value,SizeOf(UInt64),rvtQWORD);
+SetValueData(ValueName,Value,SizeOf(UInt64),rvtQWord);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteInteger(const ValueName: String; Value: Integer);
 begin
-SetValue(ValueName,Value);
+SetValueData(ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteFloat32(const ValueName: String; Value: Float32);
 begin
-SetValue(ValueName,Value,SizeOf(Float32),rvtBinary);
+SetValueData(ValueName,Value,SizeOf(Float32),rvtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteFloat64(const ValueName: String; Value: Float64);
 begin
-SetValue(ValueName,Value,SizeOf(Float64),rvtBinary);
+SetValueData(ValueName,Value,SizeOf(Float64),rvtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -979,7 +1041,7 @@ var
   Temp: WideString;
 begin
 Temp := StrToWide(Value);
-SetValue(ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),rvtString);
+SetValueData(ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),rvtString);
 end;
 
 //------------------------------------------------------------------------------
@@ -989,21 +1051,21 @@ var
   Temp: WideString;
 begin
 Temp := StrToWide(Value);
-SetValue(ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),rvtExpandString);
+SetValueData(ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),rvtExpandString);
 end;
  
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize);
 begin
-SetValue(ValueName,Buff,Size,rvtBinary);
+SetValueData(ValueName,Buff,Size,rvtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize);
 begin
-SetValue(ValueName,Memory^,Size,rvtBinary);
+SetValueData(ValueName,Memory^,Size,rvtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -1016,17 +1078,537 @@ GetMem(Buffer,TMemSize(Count));
 try
   Stream.Seek(Position,soBeginning);
   Stream.ReadBuffer(Buffer^,Count);
-  SetValue(ValueName,Buffer^,TMemSize(Count),rvtBinary);
+  SetValueData(ValueName,Buffer^,TMemSize(Count),rvtBinary);
 finally
   FreeMem(Buffer,TMemSize(Count));
 end;
 end;
 
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteBinaryStream(const ValueName: String; Stream: TStream);
 begin
 WriteBinaryStream(ValueName,Stream,0,Stream.Size);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadBool(const ValueName: String; out Value: Boolean): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := Temp <> 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt8(const ValueName: String; out Value: Int8): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := Int8(Temp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := UInt8(Temp);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt16(const ValueName: String; out Value: Int16): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := Int16(Temp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadUInt16(const ValueName: String; out Value: UInt16): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := UInt16(Temp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt32(const ValueName: String; out Value: Int32): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := Int32(Temp);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadUInt32(const ValueName: String; out Value: UInt32): Boolean;
+var
+  Temp: Integer;
+begin
+Result := GetValueData(ValueName,Temp);
+Value := UInt32(Temp);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt64(const ValueName: String; out Value: Int64): Boolean;
+begin
+Result := GetValueData(ValueName,Value,SizeOf(Int64),rvtQWord);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean;
+begin
+Result := GetValueData(ValueName,Value,SizeOf(UInt64),rvtQWord);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInteger(const ValueName: String; out Value: Integer): Boolean;
+begin
+Result := GetValueData(ValueName,Value);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadFloat32(const ValueName: String; out Value: Float32): Boolean;
+begin
+Result := GetValueData(ValueName,Value,SizeOf(Float32),rvtBinary);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadFloat64(const ValueName: String; out Value: Float64): Boolean;
+begin
+Result := GetValueData(ValueName,Value,SizeOf(Float64),rvtBinary);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadFloat(const ValueName: String; out Value: Double): Boolean;
+begin
+Result := TryReadFloat64(ValueName,Value);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadDateTime(const ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(ValueName,Double(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadDate(const ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(ValueName,Double(Value));
+Value := Int(Value);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadTime(const ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(ValueName,Double(Value));
+Value := Frac(Value);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadString(const ValueName: String; out Value: String): Boolean;
+var
+  Size: TMemSize;
+  Temp: WideString;
+begin
+Result := False;
+Size := GetValueDataSize(ValueName);
+If Size > 0 then
+  begin
+    SetLength(Temp,Size shr 1);
+    If GetValueData(ValueName,PWideChar(Temp)^,Length(Temp) * SizeOf(WideChar),rvtString) then
+      begin
+        If Temp[Length(Temp)] = #0 then
+          SetLength(Temp,Length(Temp) - 1);
+        Value := WideToStr(Temp);
+        Result := True;
+      end;
+  end
+else
+  begin
+    Value := '';
+    Result := True;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean;
+var
+  DataSize: TMemSize;
+begin
+Result := False;
+DataSize := GetValueDataSize(ValueName);
+If DataSize <= Size then
+  begin
+    If GetValueData(ValueName,Buff,DataSize,rvtBinary) then
+      begin
+        Size := DataSize;
+        Result := True;
+      end;
+  end
+else
+  begin
+    Size := 0;
+    Result := True;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean;
+begin
+Result := TryReadBinaryBuffer(ValueName,Memory^,Size);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean;
+var
+  Buffer:   Pointer;
+  DataSize: TMemSize;
+begin
+Result := False;
+DataSize := GetValueDataSize(ValueName);
+If DataSize > 0 then
+  begin
+    GetMem(Buffer,DataSize);
+    try
+      If GetValueData(ValueName,Buffer^,DataSize,rvtBinary) then
+        begin
+          Stream.WriteBuffer(Buffer^,DataSize);
+          Result := True;
+        end;
+    finally
+      FreeMem(Buffer,DataSize);
+    end;
+  end
+else Result := True;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBoolDef(const ValueName: String; Default: Boolean): Boolean;
+begin
+If not TryReadBool(ValueName,Result) then
+  Result := Default;
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt8Def(const ValueName: String; Default: Int8): Int8;
+begin
+If not TryReadInt8(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt8Def(const ValueName: String; Default: UInt8): UInt8;
+begin
+If not TryReadUInt8(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt16Def(const ValueName: String; Default: Int16): Int16;
+begin
+If not TryReadInt16(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt16Def(const ValueName: String; Default: UInt16): UInt16;
+begin
+If not TryReadUInt16(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt32Def(const ValueName: String; Default: Int32): Int32;
+begin
+If not TryReadInt32(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt32Def(const ValueName: String; Default: UInt32): UInt32;
+begin
+If not TryReadUInt32(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt64Def(const ValueName: String; Default: Int64): Int64;
+begin
+If not TryReadInt64(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt64Def(const ValueName: String; Default: UInt64): UInt64;
+begin
+If not TryReadUInt64(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadIntegerDef(const ValueName: String; Default: Integer): Integer;
+begin
+If not TryReadInteger(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat32Def(const ValueName: String; Default: Float32): Float32;
+begin
+If not TryReadFloat32(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat64Def(const ValueName: String; Default: Float64): Float64;
+begin
+If not TryReadFloat64(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloatDef(const ValueName: String; Default: Double): Double;
+begin
+If not TryReadFloat64(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDateTimeDef(const ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadDateTime(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDateDef(const ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadDate(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadTimeDef(const ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadTime(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadStringDef(const ValueName: String; const Default: String): String;
+begin
+If not TryReadString(ValueName,Result) then
+  Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBool(const ValueName: String): Boolean;
+begin
+If not TryReadBool(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadBool: Error reading value %s.',[ValueName]);
+end; 
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt8(const ValueName: String): Int8;
+begin
+If not TryReadInt8(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadInt8: Error reading value %s.',[ValueName]);
+end; 
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt8(const ValueName: String): UInt8;
+begin
+If not TryReadUInt8(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadUInt8: Error reading value %s.',[ValueName]);
+end;  
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt16(const ValueName: String): Int16;
+begin
+If not TryReadInt16(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadInt16: Error reading value %s.',[ValueName]);
+end; 
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt16(const ValueName: String): UInt16;
+begin
+If not TryReadUInt16(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadUInt16: Error reading value %s.',[ValueName]);
+end;    
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt32(const ValueName: String): Int32;
+begin
+If not TryReadInt32(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadInt32: Error reading value %s.',[ValueName]);
+end; 
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt32(const ValueName: String): UInt32;
+begin
+If not TryReadUInt32(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadUInt32: Error reading value %s.',[ValueName]);
+end;   
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt64(const ValueName: String): Int64;
+begin
+If not TryReadInt64(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadInt64: Error reading value %s.',[ValueName]);
+end; 
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt64(const ValueName: String): UInt64;
+begin
+If not TryReadUInt64(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadUInt64: Error reading value %s.',[ValueName]);
+end;  
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInteger(const ValueName: String): Integer;
+begin
+If not TryReadInteger(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadInteger: Error reading value %s.',[ValueName]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat32(const ValueName: String): Float32;
+begin
+If not TryReadFloat32(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadFloat32: Error reading value %s.',[ValueName]);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat64(const ValueName: String): Float64;
+begin
+If not TryReadFloat64(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadFloat64: Error reading value %s.',[ValueName]);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat(const ValueName: String): Double;
+begin
+If not TryReadFloat(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadFloat: Error reading value %s.',[ValueName]);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDateTime(const ValueName: String): TDateTime;
+begin
+If not TryReadDateTime(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadDateTime: Error reading value %s.',[ValueName]);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDate(const ValueName: String): TDateTime;
+begin
+If not TryReadDate(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadDate: Error reading value %s.',[ValueName]);
+end;
+ 
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadTime(const ValueName: String): TDateTime;
+begin
+If not TryReadTime(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadTime: Error reading value %s.',[ValueName]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadString(const ValueName: String): String;
+begin
+If not TryReadString(ValueName,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadString: Error reading value %s.',[ValueName]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize;
+begin
+Result := Size;
+If not TryReadBinaryBuffer(ValueName,Buff,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value %s.',[ValueName]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
+begin
+Result := Size;
+If not TryReadBinaryMemory(ValueName,Memory,Result) then
+  raise Exception.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value %s.',[ValueName]);
+end;
+
+//------------------------------------------------------------------------------
+ 
+Function TRegistryEx.ReadBinaryStream(const ValueName: String; Stream: TStream): TMemSize;
+var
+  InitPos:  Int64;
+begin
+InitPos := Stream.Position;
+If TryReadBinaryStream(ValueName,Stream) then
+  Result := TMemSize(Stream.Position - InitPos)
+else
+  raise Exception.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value %s.',[ValueName]);
 end;
 
 end.
