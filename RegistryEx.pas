@@ -41,9 +41,8 @@ type
     LastWriteTime:      TDateTime;
   end;
 
-  TRXValueType = (rvtBinary,rvtDWord,rvtDWordLE = rvtDWord,rvtDWordBE,
-                  rvtExpandString,rvtLink,rvtMultiString,rvtNone,rvtQWord,
-                  rvtQWordLE = rvtQWord,rvtString,rvtUnknown);
+  TRXValueType = (rvtBinary,rvtDWord,rvtDWordLE,rvtDWordBE,rvtExpandString,rvtLink,
+                  rvtMultiString,rvtNone,rvtQWord,rvtQWordLE,rvtString,rvtUnknown);
 
   TRXValueInfo = record
     ValueType:  TRXValueType;
@@ -71,6 +70,11 @@ type
     Function OpenKeyInternal(const KeyName: String; AccessRights: DWORD): HKEY; virtual;
 
     procedure ChangingRootKey; virtual;
+
+    procedure SetValue(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure SetValue(const ValueName: String; Data: Integer); overload; virtual;
+    Function GetValue(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function GetValue(const ValueName: String; Data: Integer; ValueType: TRXValueType): Boolean; overload; virtual;
   public
     class Function RegistryQuotaAllowed: UInt32; virtual;
     class Function RegistryQuotaUsed: UInt32; virtual;
@@ -105,7 +109,59 @@ type
     procedure DeleteContent; virtual;
 
     // current key values access
+    procedure WriteBool(const ValueName: String; Value: Boolean); virtual;
+    procedure WriteInt8(const ValueName: String; Value: Int8); virtual;
+    procedure WriteUInt8(const ValueName: String; Value: UInt8); virtual;
+    procedure WriteInt16(const ValueName: String; Value: Int16); virtual;
+    procedure WriteUInt16(const ValueName: String; Value: UInt16); virtual;
+    procedure WriteInt32(const ValueName: String; Value: Int32); virtual;
+    procedure WriteUInt32(const ValueName: String; Value: UInt32); virtual;
+    procedure WriteInt64(const ValueName: String; Value: Int64); virtual;
+    procedure WriteUInt64(const ValueName: String; Value: UInt64); virtual;
+    procedure WriteInteger(const ValueName: String; Value: Integer); virtual;
 
+    procedure WriteFloat32(const ValueName: String; Value: Float32); virtual;
+    procedure WriteFloat64(const ValueName: String; Value: Float64); virtual;
+    procedure WriteFloat(const ValueName: String; Value: Double); virtual;
+
+    procedure WriteDateTime(const ValueName: String; Value: TDateTime); virtual;
+    procedure WriteDate(const ValueName: String; Value: TDateTime); virtual;
+    procedure WriteTime(const ValueName: String; Value: TDateTime); virtual;
+
+    procedure WriteString(const ValueName: String; const Value: String); virtual;
+    procedure WriteExpandString(const ValueName: String; const Value: String); virtual;
+
+    procedure WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize); virtual;
+    procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); virtual;
+    procedure WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
+    procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
+(*
+    Function TryReadBool(const ValueName: String; out Value: Boolean): Boolean; virtual;
+    Function TryReadInt8(const ValueName: String; out Value: Int8): Boolean; virtual;
+    Function TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean; virtual;
+    Function TryReadInt16(const ValueName: String; out Value: Int16): Boolean; virtual;
+    Function TryReadUInt16(const ValueName: String; out Value: UInt16): Boolean; virtual;
+    Function TryReadInt32(const ValueName: String; out Value: Int32): Boolean; virtual;
+    Function TryReadUInt32(const ValueName: String; out Value: UInt32): Boolean; virtual;
+    Function TryReadInt64(const ValueName: String; out Value: Int64): Boolean; virtual;
+    Function TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean; virtual;
+    Function TryReadInteger(const ValueName: String; out Value: Integer): Boolean; virtual;
+
+    Function TryReadFloat32(const ValueName: String; out Value: Float32): Boolean; virtual;
+    Function TryReadFloat64(const ValueName: String; out Value: Float64): Boolean; virtual;
+    Function TryReadFloat(const ValueName: String; out Value: Double): Boolean; virtual;
+
+    Function TryReadDateTime(const ValueName: String; out Value: TDateTime): Boolean; virtual;
+    Function TryReadDate(const ValueName: String; out Value: TDateTime): Boolean; virtual;
+    Function TryReadTime(const ValueName: String; out Value: TDateTime): Boolean; virtual;
+
+    Function TryReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): Boolean; virtual;
+    Function TryReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): Boolean; virtual;
+    Function TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean; virtual;
+
+    Function ReadBoolDef(const ValueName: String; Default: Boolean): Boolean; virtual;
+    Function ReadBool(const ValueName: String): Boolean; virtual;
+*)
     property AccessRights: TRXKeyAccessRights read fAccessRights write SetAccessRights;
     property AccessRightsSys: DWORD read fAccessRightsSys write SetAccessRightsSys;
     property RootKey: TRXRootKey read fRootKey write SetRootKey;
@@ -188,6 +244,27 @@ case RegValueType of
   REG_SZ:                   Result := rvtString;
 else
   Result := rvtUnknown;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function DecodeValueType(ValueType: TRXValueType): DWORD;
+begin
+case ValueType of
+  rvtBinary:        Result := REG_BINARY;
+  rvtDWord:         Result := REG_DWORD;
+  rvtDWordLE:       Result := REG_DWORD_LITTLE_ENDIAN;
+  rvtDWordBE:       Result := REG_DWORD_BIG_ENDIAN;
+  rvtExpandString:  Result := REG_EXPAND_SZ;
+  rvtLink:          Result := REG_LINK;
+  rvtMultiString:   Result := REG_MULTI_SZ;
+  rvtNone:          Result := REG_NONE;
+  rvtQWord:         Result := REG_QWORD;
+  rvtQWordLE:       Result := REG_QWORD_LITTLE_ENDIAN;
+  rvtString:        Result := REG_SZ;
+else
+  Result := REG_NONE;
 end;
 end;
 
@@ -374,6 +451,40 @@ begin
 CloseKey;
 end;
 
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.SetValue(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
+var
+  Result: LSTATUS;
+begin
+Result := RegSetValueExW(fCurrentKeyHandle,PWideChar(StrToWide(ValueName)),0,DecodeValueType(ValueType),@Data,DWORD(Size));
+If Result <> ERROR_SUCCESS then
+  raise Exception.CreateFmt('TRegistryEx.SetValue: Unable to write value %s (%d).',[ValueName,Result]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.SetValue(const ValueName: String; Data: Integer);
+var
+  Temp: DWORD;
+begin
+Temp := DWORD(Data);
+SetValue(ValueName,Temp,SizeOf(DWORD),rvtDWord);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetValue(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
+begin
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetValue(const ValueName: String; Data: Integer; ValueType: TRXValueType): Boolean;
+begin
+Result := GetValue(ValueName,Data,SizeOf(Integer),rvtDWord);
+end;
+
 //==============================================================================
 
 class Function TRegistryEx.RegistryQuotaAllowed: UInt32;
@@ -506,10 +617,7 @@ var
                 PWideChar(StrToWide(TempName)),
                 0,AccessRights,TempKey) = ERROR_SUCCESS;
     If Result then
-      begin
-        OpenKeyReadOnly := True;
-        SetAccessRightsSys(AccessRights);
-      end;
+      OpenKeyReadOnly := True;
   end;
 
 begin
@@ -750,6 +858,175 @@ procedure TRegistryEx.DeleteContent;
 begin
 DeleteSubKeys;
 DeleteValues;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBool(const ValueName: String; Value: Boolean);
+begin
+SetValue(ValueName,Ord(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt8(const ValueName: String; Value: Int8);
+begin
+SetValue(ValueName,Integer(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteUInt8(const ValueName: String; Value: UInt8);
+begin
+SetValue(ValueName,Integer(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt16(const ValueName: String; Value: Int16);
+begin
+SetValue(ValueName,Integer(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteUInt16(const ValueName: String; Value: UInt16);
+begin
+SetValue(ValueName,Integer(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt32(const ValueName: String; Value: Int32);
+begin
+SetValue(ValueName,Integer(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteUInt32(const ValueName: String; Value: UInt32);
+begin
+SetValue(ValueName,Integer(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt64(const ValueName: String; Value: Int64);
+begin
+SetValue(ValueName,Value,SizeOf(Int64),rvtQWORD);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteUInt64(const ValueName: String; Value: UInt64);
+begin
+SetValue(ValueName,Value,SizeOf(UInt64),rvtQWORD);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInteger(const ValueName: String; Value: Integer);
+begin
+SetValue(ValueName,Value);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteFloat32(const ValueName: String; Value: Float32);
+begin
+SetValue(ValueName,Value,SizeOf(Float32),rvtBinary);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteFloat64(const ValueName: String; Value: Float64);
+begin
+SetValue(ValueName,Value,SizeOf(Float64),rvtBinary);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteFloat(const ValueName: String; Value: Double);
+begin
+WriteFloat64(ValueName,Value);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteDateTime(const ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(ValueName,Value);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteDate(const ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(ValueName,Int(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteTime(const ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(ValueName,Frac(Value));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteString(const ValueName: String; const Value: String);
+var
+  Temp: WideString;
+begin
+Temp := StrToWide(Value);
+SetValue(ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),rvtString);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteExpandString(const ValueName: String; const Value: String);
+var
+  Temp: WideString;
+begin
+Temp := StrToWide(Value);
+SetValue(ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),rvtExpandString);
+end;
+ 
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize);
+begin
+SetValue(ValueName,Buff,Size,rvtBinary);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize);
+begin
+SetValue(ValueName,Memory^,Size,rvtBinary);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64);
+var
+  Buffer: Pointer;
+begin
+GetMem(Buffer,TMemSize(Count));
+try
+  Stream.Seek(Position,soBeginning);
+  Stream.ReadBuffer(Buffer^,Count);
+  SetValue(ValueName,Buffer^,TMemSize(Count),rvtBinary);
+finally
+  FreeMem(Buffer,TMemSize(Count));
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryStream(const ValueName: String; Stream: TStream);
+begin
+WriteBinaryStream(ValueName,Stream,0,Stream.Size);
 end;
 
 end.
