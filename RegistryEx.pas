@@ -5,32 +5,238 @@ unit RegistryEx;
 interface
 
 uses
-  Windows, Classes,
-  AuxTypes;
+  Windows, SysUtils, Classes,
+  AuxTypes, AuxClasses;
 
+{===============================================================================
+    Library-specific exceptions
+===============================================================================}
 type
-  TRXKeyAccessRight = (karDelete,karReadControl,karWriteDAC,karWriteOwner,
-                       karCreateLink,karCreateSubKey,karEnumerateSubKeys,
-                       karNotify,karQueryValue,karSetValue,karWoW64_32Key,
-                       karWoW64_64Key);
+  ERXException = class(Exception);
+
+  ERXTimeConversionError = class(ERXException);
+  ERXInvalidValue        = class(ERXException);
+
+  ERXSystemError = class(ERXException);
+
+{===============================================================================
+    System constants
+===============================================================================}
+{-------------------------------------------------------------------------------
+    System constants - registry access rights
+-------------------------------------------------------------------------------}
+const
+  KEY_QUERY_VALUE        = $0001;
+  KEY_SET_VALUE          = $0002;
+  KEY_CREATE_SUB_KEY     = $0004;
+  KEY_ENUMERATE_SUB_KEYS = $0008;
+  KEY_NOTIFY             = $0010;
+  KEY_CREATE_LINK        = $0020;
+  KEY_WOW64_32KEY        = $0200;
+  KEY_WOW64_64KEY        = $0100;
+  KEY_WOW64_RES          = $0300;
+
+  KEY_READ = (STANDARD_RIGHTS_READ or KEY_QUERY_VALUE or KEY_ENUMERATE_SUB_KEYS or KEY_NOTIFY) and not SYNCHRONIZE;
+
+  KEY_WRITE = (STANDARD_RIGHTS_WRITE or KEY_SET_VALUE or KEY_CREATE_SUB_KEY) and not SYNCHRONIZE;
+
+  KEY_EXECUTE = KEY_READ and not SYNCHRONIZE;
+
+  KEY_ALL_ACCESS = (STANDARD_RIGHTS_ALL or KEY_QUERY_VALUE or KEY_SET_VALUE or
+                    KEY_CREATE_SUB_KEY or KEY_ENUMERATE_SUB_KEYS or KEY_NOTIFY or
+                    KEY_CREATE_LINK) and not SYNCHRONIZE;
+
+{-------------------------------------------------------------------------------
+    System constants - open/create options
+-------------------------------------------------------------------------------}
+const
+  REG_OPTION_RESERVED        = DWORD($00000000);  // Parameter is reserved
+  REG_OPTION_NON_VOLATILE    = DWORD($00000000);  // Key is preserved when system is rebooted
+  REG_OPTION_VOLATILE        = DWORD($00000001);  // Key is not preserved when system is rebooted
+  REG_OPTION_CREATE_LINK     = DWORD($00000002);  // Created key is a symbolic link
+  REG_OPTION_BACKUP_RESTORE  = DWORD($00000004);  // Open for backup or restore, special access rules, privilege required
+  REG_OPTION_OPEN_LINK       = DWORD($00000008);  // Open symbolic link
+  REG_OPTION_DONT_VIRTUALIZE = DWORD($00000010);  // Disable Open/Read/Write virtualization for this open and the resulting handle.
+
+  REG_LEGAL_OPTION = REG_OPTION_RESERVED or REG_OPTION_NON_VOLATILE or
+                     REG_OPTION_VOLATILE or REG_OPTION_CREATE_LINK or
+                     REG_OPTION_BACKUP_RESTORE or REG_OPTION_OPEN_LINK or
+                     REG_OPTION_DONT_VIRTUALIZE;
+
+  REG_OPEN_LEGAL_OPTION = REG_OPTION_RESERVED or REG_OPTION_BACKUP_RESTORE or
+                          REG_OPTION_OPEN_LINK or REG_OPTION_DONT_VIRTUALIZE;
+
+{-------------------------------------------------------------------------------
+    System constants - key creation/open disposition
+-------------------------------------------------------------------------------}
+const
+  REG_CREATED_NEW_KEY     = DWORD($00000001); // New Registry Key created
+  REG_OPENED_EXISTING_KEY = DWORD($00000002); // Existing Key opened
+
+
+{-------------------------------------------------------------------------------
+    System constants - hive format to be used by Reg(Nt)SaveKeyEx
+-------------------------------------------------------------------------------}
+const
+  REG_STANDARD_FORMAT = 1;
+  REG_LATEST_FORMAT   = 2;
+  REG_NO_COMPRESSION  = 4;
+
+{-------------------------------------------------------------------------------
+    System constants - key restore & hive load flags
+-------------------------------------------------------------------------------}
+const
+  REG_WHOLE_HIVE_VOLATILE       = DWORD($00000001);           // Restore whole hive volatile
+  REG_REFRESH_HIVE              = DWORD($00000002);           // Unwind changes to last flush
+  REG_NO_LAZY_FLUSH             = DWORD($00000004);           // Never lazy flush this hive
+  REG_FORCE_RESTORE             = DWORD($00000008);           // Force the restore process even when we have open handles on subkeys
+  REG_APP_HIVE                  = DWORD($00000010);           // Loads the hive visible to the calling process
+  REG_PROCESS_PRIVATE           = DWORD($00000020);           // Hive cannot be mounted by any other process while in use
+  REG_START_JOURNAL             = DWORD($00000040);           // Starts Hive Journal
+  REG_HIVE_EXACT_FILE_GROWTH    = DWORD($00000080);           // Grow hive file in exact 4k increments
+  REG_HIVE_NO_RM                = DWORD($00000100);           // No RM is started for this hive (no transactions)
+  REG_HIVE_SINGLE_LOG           = DWORD($00000200);           // Legacy single logging is used for this hive
+  REG_BOOT_HIVE                 = DWORD($00000400);           // This hive might be used by the OS loader
+  REG_LOAD_HIVE_OPEN_HANDLE     = DWORD($00000800);           // Load the hive and return a handle to its root kcb
+  REG_FLUSH_HIVE_FILE_GROWTH    = DWORD($00001000);           // Flush changes to primary hive file size as part of all flushes
+  REG_OPEN_READ_ONLY            = DWORD($00002000);           // Open a hive's files in read-only mode
+  REG_IMMUTABLE                 = DWORD($00004000);           // Load the hive, but don't allow any modification of it
+  REG_NO_IMPERSONATION_FALLBACK = DWORD($00008000);           // Do not fall back to impersonating the caller if hive file access fails
+  REG_APP_HIVE_OPEN_READ_ONLY   = DWORD(REG_OPEN_READ_ONLY);  // Open an app hive's files in read-only mode (if the hive was not previously loaded)
+
+{-------------------------------------------------------------------------------
+    System constants - unload flags
+-------------------------------------------------------------------------------}
+const
+  REG_FORCE_UNLOAD       = 1;
+  REG_UNLOAD_LEGAL_FLAGS = REG_FORCE_UNLOAD;
+
+{-------------------------------------------------------------------------------
+    System constants - notify filter values
+-------------------------------------------------------------------------------}
+const
+  REG_NOTIFY_CHANGE_NAME       = DWORD($00000001);  // Create or delete (child)
+  REG_NOTIFY_CHANGE_ATTRIBUTES = DWORD($00000002);
+  REG_NOTIFY_CHANGE_LAST_SET   = DWORD($00000004);  // time stamp
+  REG_NOTIFY_CHANGE_SECURITY   = DWORD($00000008);
+  REG_NOTIFY_THREAD_AGNOSTIC   = DWORD($10000000);  // Not associated with a calling thread, can only be used for async user event based notification
+
+  REG_LEGAL_CHANGE_FILTER = REG_NOTIFY_CHANGE_NAME or REG_NOTIFY_CHANGE_ATTRIBUTES or
+                            REG_NOTIFY_CHANGE_LAST_SET or REG_NOTIFY_CHANGE_SECURITY or
+                            REG_NOTIFY_THREAD_AGNOSTIC;
+
+{-------------------------------------------------------------------------------
+    System constants - predefined value types
+-------------------------------------------------------------------------------}
+const
+  REG_NONE                       = 0;   // No value type
+  REG_SZ                         = 1;   // Unicode nul terminated string
+  REG_EXPAND_SZ                  = 2;   // Unicode nul terminated string (with environment variable references)
+  REG_BINARY                     = 3;   // Free form binary
+  REG_DWORD                      = 4;   // 32-bit number
+  REG_DWORD_LITTLE_ENDIAN        = 4;   // 32-bit number (same as REG_DWORD)
+  REG_DWORD_BIG_ENDIAN           = 5;   // 32-bit number
+  REG_LINK                       = 6;   // Symbolic Link (unicode)
+  REG_MULTI_SZ                   = 7;   // Multiple Unicode strings
+  REG_RESOURCE_LIST              = 8;   // Resource list in the resource map
+  REG_FULL_RESOURCE_DESCRIPTOR   = 9;   // Resource list in the hardware description
+  REG_RESOURCE_REQUIREMENTS_LIST = 10;
+  REG_QWORD                      = 11;  // 64-bit number
+  REG_QWORD_LITTLE_ENDIAN        = 11;  // 64-bit number (same as REG_QWORD)
+
+{-------------------------------------------------------------------------------
+    System constants - (RRF) registry routine flags (for RegGetValue)
+-------------------------------------------------------------------------------}
+const
+  RRF_RT_REG_NONE      = $00000001; // restrict type to REG_NONE      (other data types will not return ERROR_SUCCESS)
+  RRF_RT_REG_SZ        = $00000002; // restrict type to REG_SZ        (other data types will not return ERROR_SUCCESS) (automatically converts REG_EXPAND_SZ to REG_SZ unless RRF_NOEXPAND is specified)
+  RRF_RT_REG_EXPAND_SZ = $00000004; // restrict type to REG_EXPAND_SZ (other data types will not return ERROR_SUCCESS) (must specify RRF_NOEXPAND or RegGetValue will fail with ERROR_INVALID_PARAMETER)
+  RRF_RT_REG_BINARY    = $00000008; // restrict type to REG_BINARY    (other data types will not return ERROR_SUCCESS)
+  RRF_RT_REG_DWORD     = $00000010; // restrict type to REG_DWORD     (other data types will not return ERROR_SUCCESS)
+  RRF_RT_REG_MULTI_SZ  = $00000020; // restrict type to REG_MULTI_SZ  (other data types will not return ERROR_SUCCESS)
+  RRF_RT_REG_QWORD     = $00000040; // restrict type to REG_QWORD     (other data types will not return ERROR_SUCCESS)
+
+  RRF_RT_DWORD         = RRF_RT_REG_BINARY or RRF_RT_REG_DWORD; // restrict type to *32-bit* RRF_RT_REG_BINARY or RRF_RT_REG_DWORD (other data types will not return ERROR_SUCCESS)
+  RRF_RT_QWORD         = RRF_RT_REG_BINARY or RRF_RT_REG_QWORD; // restrict type to *64-bit* RRF_RT_REG_BINARY or RRF_RT_REG_DWORD (other data types will not return ERROR_SUCCESS)
+  RRF_RT_ANY           = $0000FFFF;                             // no type restriction
+
+  RRF_SUBKEY_WOW6464KEY = $00010000;  // when opening the subkey (if provided) force open from the 64bit location (only one SUBKEY_WOW64* flag can be set or RegGetValue will fail with ERROR_INVALID_PARAMETER)
+  RRF_SUBKEY_WOW6432KEY = $00020000;  // when opening the subkey (if provided) force open from the 32bit location (only one SUBKEY_WOW64* flag can be set or RegGetValue will fail with ERROR_INVALID_PARAMETER)
+  RRF_WOW64_MASK        = $00030000;
+
+  RRF_NOEXPAND      = $10000000;  // do not automatically expand environment strings if value is of type REG_EXPAND_SZ
+  RRF_ZEROONFAILURE = $20000000;  // if pvData is not NULL, set content to all zeros on failure
+
+{-------------------------------------------------------------------------------
+    System constants - flags for RegLoadAppKey
+-------------------------------------------------------------------------------}
+const
+  REG_PROCESS_APPKEY               = $00000001;
+  REG_USE_CURRENT_SECURITY_CONTEXT = $00000002;
+
+{-------------------------------------------------------------------------------
+    System constants - reserved key handles
+-------------------------------------------------------------------------------}
+const
+  HKEY_CLASSES_ROOT                = HKEY($80000000);
+  HKEY_CURRENT_USER                = HKEY($80000001);
+  HKEY_LOCAL_MACHINE               = HKEY($80000002);
+  HKEY_USERS                       = HKEY($80000003);
+  HKEY_PERFORMANCE_DATA            = HKEY($80000004);
+  HKEY_PERFORMANCE_TEXT            = HKEY($80000050);
+  HKEY_PERFORMANCE_NLSTEXT         = HKEY($80000060);
+  HKEY_CURRENT_CONFIG              = HKEY($80000005);
+  HKEY_DYN_DATA                    = HKEY($80000006);
+  HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
+
+{===============================================================================
+--------------------------------------------------------------------------------
+                                   TRegistryEx
+--------------------------------------------------------------------------------
+===============================================================================}
+const
+  REG_PATH_DELIMITER = '\';
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
+  TRXKeyAccessRight = (karQueryValue,karSetValue,karCreateSubKey,
+                       karEnumerateSubKeys,karNotify,karCreateLink,
+                       karWoW64_32Key,karWoW64_64Key,{standard access rights...}
+                       karDelete,karReadControl,karWriteDAC,karWriteOwner,
+                       karSynchronize);
 
   TRXKeyAccessRights = set of TRXKeyAccessRight;
 
 const
-  karExecute = [karNotify,karEnumerateSubKeys,karQueryValue,karReadControl];
-  karRead    = karExecute;
-  karWrite   = [karCreateSubKey,karSetValue,karReadControl];
+  kaWoW64_Res = [karWoW64_32Key,karWoW64_64Key];
 
-  karStandardAccessRights = [karDelete,karReadControl,karWriteDAC,karWriteOwner];
+  karStandardRead    = [karReadControl];
+  karStandardWrite   = [karReadControl];
+  karStandardExecute = [karReadControl];
+  karStandardAll     = [karDelete,karReadControl,karWriteDAC,karWriteOwner,karSynchronize];
 
-  karAllAccess = karStandardAccessRights + [karQueryValue,karSetValue,
-    karCreateSubKey,karEnumerateSubKeys,karNotify,karCreateLink];
+  karRead    = karStandardRead + [karQueryValue,karEnumerateSubKeys,karNotify] - [karSynchronize];
+  karWrite   = karStandardWrite + [karSetValue,karCreateSubKey] - [karSynchronize];
+  karExecute = karRead - [karSynchronize];
 
+  karAllAccess = karStandardAll + [karQueryValue,karSetValue, karCreateSubKey,
+                 karEnumerateSubKeys,karNotify,karCreateLink] - [karSynchronize];
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
 type
-  TRXRootKey = (rkClassesRoot,rkCurrentUser,rkLocalMachine,rkUsers,
-                rkPerformanceData,rkPerformanceText,rkPerformanceNLSText,
-                rkCurrentConfig,rkDynData,rkCurrentUserLocalSettings);
+  TRXValueType = (vtNone,vtString,vtExpandString,vtBinary,vtDWord,vtDWordLE,
+                  vtDWordBE,vtLink,vtMultiString,vtResourceList,
+                  vtFullResourceDescriptor,vtResourceRequirementsList,vtQWord,
+                  vtQWordLE,vtUnknown);
 
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
+  TRXPredefinedKey = (pkClassesRoot,pkCurrentUser,pkLocalMachine,pkUsers,
+                      pkPerformanceData,pkPerformanceText,pkPerformanceNLSText,
+                      pkCurrentConfig,pkDynData,pkCurrentUserLocalSettings);
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
   // note that lengths are in unicode characters, without terminating zero
   TRXKeyInfo = record
     SubKeys:            UInt32;
@@ -43,81 +249,88 @@ type
     LastWriteTime:      TDateTime;
   end;
 
-  TRXValueType = (rvtBinary,rvtDWord,rvtDWordLE,rvtDWordBE,rvtExpandString,rvtLink,
-                  rvtMultiString,rvtNone,rvtQWord,rvtQWordLE,rvtString,rvtUnknown);
-
   TRXValueInfo = record
     ValueType:  TRXValueType;
     DataSize:   TMemSize;
   end;
 
-  // todo
-  //  RegNotifyChangeKeyValue
-
-  TRegistryEx = class(TObject)
-  private
-    fAccessRights:      TRXKeyAccessRights;
+{===============================================================================
+    TRegistryEx - class declaration
+===============================================================================}
+{$message 'todo: RegNotifyChangeKeyValue'}
+type
+  TRegistryEx = class(TCustomObject)
+  protected
     fAccessRightsSys:   DWORD;
-    fRootKey:           TRXRootKey;
+    fAccessRights:      TRXKeyAccessRights;
     fRootKeyHandle:     HKEY;
+    fRootKey:           TRXPredefinedKey;
     fCurrentKeyHandle:  HKEY;
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
-    procedure SetAccessRights(Value: TRXKeyAccessRights);
-    procedure SetAccessRightsSys(Value: DWORD);
-    procedure SetRootKey(Value: TRXRootKey);
-    procedure SetRootKeyHandle(Value: HKEY);
-  protected
-    class Function IsRelativeGetRectified(const KeyName: String; out RectifiedKeyName: String): Boolean; virtual;
-    procedure SetCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
-    Function GetWorkingKey(Relative: Boolean): HKEY; virtual;
-    Function OpenKeyInternal(const KeyName: String; AccessRights: DWORD): HKEY; overload; virtual;
-    procedure ChangingRootKey; virtual;
-    procedure SetValueData(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
-    procedure SetValueData(const ValueName: String; Data: Integer); overload; virtual;
-    Function GetValueData(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
-    Function GetValueData(const ValueName: String; out Data: Integer): Boolean; overload; virtual;
+    // getters, setters
+    procedure SetAccessRightsSys(Value: DWORD); virtual;
+    procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
+    procedure SetRootKeyHandle(Value: HKEY); virtual;
+    procedure SetRootKey(Value: TRXPredefinedKey); virtual;
+
+
+    //class Function IsRelativeGetRectified(const KeyName: String; out RectifiedKeyName: String): Boolean; virtual;
+    //procedure SetCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
+    //Function GetWorkingKey(Relative: Boolean): HKEY; virtual;
+    //Function OpenKeyInternal(const KeyName: String; AccessRights: DWORD): HKEY; overload; virtual;
+    //procedure ChangingRootKey; virtual;
+    //procedure SetValueData(const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    //procedure SetValueData(const ValueName: String; Data: Integer); overload; virtual;
+    //Function GetValueData(const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    //Function GetValueData(const ValueName: String; out Data: Integer): Boolean; overload; virtual;
+    procedure Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights); virtual;
+    procedure Finalize; virtual;
   public
     class Function RegistryQuotaAllowed: UInt32; virtual;
     class Function RegistryQuotaUsed: UInt32; virtual;
-      
-    constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;
-    constructor Create(RootKey: TRXRootKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
+
+    constructor Create(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
+    constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;  // root key is set to pkCurrentUser
     destructor Destroy; override;
 
-    //Function ConnectRegistry(const MachineName: String): Boolean; virtual;
-    //Function DisablePredefinedCache: Boolean; virtual;
+    ////Function ConnectRegistry(const MachineName: String): Boolean; virtual;
+    ////Function DisablePredefinedCache: Boolean; virtual;
 
-    // global keys access (does not depend on open key)
-    Function KeyExists(const KeyName: String): Boolean; virtual;
-    Function CreateKey(const KeyName: String): Boolean; virtual;
-    Function DeleteKey(const KeyName: String): Boolean; virtual;
+    // global key access (does not depend on current key)
+    //Function KeyExists(const KeyName: String): Boolean; virtual;
+    //Function CreateKey(const KeyName: String): Boolean; virtual;
+    //Function DeleteKey(const KeyName: String): Boolean; virtual;
 
-    Function CopyKey(const SrcKey, DestKey: String): Boolean; virtual;
-    Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
+    //Function CopyKey(const SrcKey, DestKey: String): Boolean; virtual;
+    //Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
 
-    //Function SaveKey(const Key, FileName: string): Boolean; virtual;
-    //Function LoadKey(const Key, FileName: string): Boolean; virtual;
-    //RegReplaceKey
-    //RegRestoreKey
-    //UnLoadKey
+    ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
+    ////Function LoadKey(const Key, FileName: string): Boolean; virtual;
+    ////RegReplaceKey
+    ////RegRestoreKey
+    ////UnLoadKey
 
 
     // current key access
-    Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; virtual;
-    Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
-    Function GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean; virtual;
-    procedure GetSubKeys(SubKeys: TStrings); virtual;
-    Function HasSubKeys: Boolean; virtual;
-    procedure FlushKey; virtual;
-    procedure CloseKey; virtual;
+    //Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; virtual;
+    //Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
+    //Function GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean; virtual;
+    //procedure GetSubKeys(SubKeys: TStrings); virtual;
+    //Function HasSubKeys: Boolean; virtual;
+    //procedure FlushKey; virtual;
+    procedure CloseKey; virtual; abstract;
+    //procedure DeleteSubKeys; virtual;
+    //procedure DeleteValues; virtual;
+    //procedure DeleteContent; virtual;    
 
-    //Function DisableReflection: Boolean; virtual;
-    //Function EnableReflection: Boolean; virtual;
-    // RegQueryReflection +^ -> make to property
+    ////Function DisableReflection: Boolean; virtual;
+    ////Function EnableReflection: Boolean; virtual;
+    //// RegQueryReflection +^ -> make to property
 
-    //Function OverridePredefKey(RootKey: TRXRootKey): Boolean; virtual;
-
+    ////Function OverridePredefinedKey(RootKey: TRXRootKey): Boolean; virtual;
+    //Function RestorePredefinedKey(RootKey: TRXRootKey): Boolean; virtual;
+    (*
     Function ValueExists(const ValueName: String): Boolean; virtual;
     procedure GetValues(Values: TStrings); virtual;
     Function GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; virtual;
@@ -125,10 +338,6 @@ type
     Function GetValueDataSize(const ValueName: String): TMemSize; virtual;
     Function RenameValue(const OldName, NewName: String): Boolean; virtual;
     Function DeleteValue(const ValueName: String): Boolean; virtual;
-
-    procedure DeleteSubKeys; virtual;
-    procedure DeleteValues; virtual;
-    procedure DeleteContent; virtual;
 
     // current key values access
     procedure WriteBool(const ValueName: String; Value: Boolean); virtual;
@@ -145,6 +354,7 @@ type
     procedure WriteFloat32(const ValueName: String; Value: Float32); virtual;
     procedure WriteFloat64(const ValueName: String; Value: Float64); virtual;
     procedure WriteFloat(const ValueName: String; Value: Double); virtual;
+    procedure WriteCurrency(const ValueName: String; Value: Currency); virtual;
 
     procedure WriteDateTime(const ValueName: String; Value: TDateTime); virtual;
     procedure WriteDate(const ValueName: String; Value: TDateTime); virtual;
@@ -152,6 +362,7 @@ type
 
     procedure WriteString(const ValueName: String; const Value: String); virtual;
     procedure WriteExpandString(const ValueName: String; const Value: String); virtual;
+    //procedure WriteStrings(const ValueName: String; Value: TStrings); virtual;
 
     procedure WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize); virtual;
     procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); virtual;
@@ -178,6 +389,7 @@ type
     Function TryReadTime(const ValueName: String; out Value: TDateTime): Boolean; virtual;
 
     Function TryReadString(const ValueName: String; out Value: String): Boolean; virtual;
+    //Function TryReadStrings(const ValueName: String; Value: TStrings): Boolean; virtual;
 
     Function TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean; virtual;
     Function TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean; virtual;
@@ -224,48 +436,34 @@ type
     Function ReadTime(const ValueName: String): TDateTime; virtual;
 
     Function ReadString(const ValueName: String): String; virtual;
+    //procedure ReadStrings(const ValueName: String; Value: TStrings); virtual;
 
     Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; virtual;
     Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; virtual;
     Function ReadBinaryStream(const ValueName: String; Stream: TStream): TMemSize; virtual;
-
-    property AccessRights: TRXKeyAccessRights read fAccessRights write SetAccessRights;
+   *)
     property AccessRightsSys: DWORD read fAccessRightsSys write SetAccessRightsSys;
-    property RootKey: TRXRootKey read fRootKey write SetRootKey;
+    property AccessRights: TRXKeyAccessRights read fAccessRights write SetAccessRights;
     property RootKeyHandle: HKEY read fRootKeyHandle write SetRootKeyHandle;
+    property RootKey: TRXPredefinedKey read fRootKey write SetRootKey;
     property CurrentKeyHandle: HKEY read fCurrentKeyHandle;
     property CurrentKeyName: String read fCurrentKeyName;
+    property CurrentKeyReflection: Boolean read GetCurrentKeyReflection write SetCurrentKeyReflection;
     property FlushOnClose: Boolean read fFlushOnClose write fFlushOnClose;
+
   end;
 
 implementation
 
-uses
-  SysUtils,
-  BitOps, AuxExceptions, StrRect;
+//type
+//  LSTATUS = Int32;
+//  LPBYTE  = ^Byte;
 
-type
-  LSTATUS = Int32;
-  LPBYTE  = ^Byte;
-
-const
-  REG_PATH_DLEIMITER = '\';
-
-  KEY_WOW64_32KEY = DWORD($00000200);
-  KEY_WOW64_64KEY = DWORD($00000100);
-
-  HKEY_PERFORMANCE_TEXT            = HKEY($80000050);
-  HKEY_PERFORMANCE_NLSTEXT         = HKEY($80000060);
-  HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
-
-  REG_QWORD               = 11;
-  REG_QWORD_LITTLE_ENDIAN = 11;
-
-Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'Shlwapi.dll';
-Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'Shlwapi.dll';
+//Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'Shlwapi.dll';
+//Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'Shlwapi.dll';
 
 Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
-
+(*
 Function RegEnumValueW(
   hKey:           HKEY;
   dwIndex:        DWORD;
@@ -276,7 +474,7 @@ Function RegEnumValueW(
   lpData:         LPBYTE;
   lpcbData:       LPDWORD
 ): LSTATUS; stdcall; external 'Advapi32.dll';
-
+*)
 //==============================================================================
 
 Function FileTimeToDateTime(FileTime: TFileTime): TDateTime;
@@ -289,185 +487,272 @@ If FileTimeToLocalFileTime(FileTime,LocalTime) then
     If FileTimeToSystemTime(LocalTime,SystemTime) then
       Result := SystemTimeToDateTime(SystemTime)
     else
-      raise Exception.CreateFmt('FileTimeToDateTime: Unable to convert to system time (0x%.8x).',[GetLastError]);
+      raise ERXTimeConversionError.CreateFmt('FileTimeToDateTime: Unable to convert to system time (%d).',[GetLastError]);
   end
-else raise Exception.CreateFmt('FileTimeToDateTime: Unable to convert to local time (0x%.8x).',[GetLastError]);
+else raise ERXTimeConversionError.CreateFmt('FileTimeToDateTime: Unable to convert to local file time (%d).',[GetLastError]);
 end;
 
 //------------------------------------------------------------------------------
 
-Function EncodeValueType(RegValueType: DWORD): TRXValueType;
+Function TranslateAccessRights(AccessRights: DWORD): TRXKeyAccessRights; overload;
+
+  procedure SetResultAccessRight(Flag: DWORD; AccessRight: TRXKeyAccessRight);
+  begin
+    If AccessRights and Flag = Flag then
+      Include(Result,AccessRight);
+  end;
+
 begin
-case RegValueType of
-  REG_BINARY:               Result := rvtBinary;
-  REG_DWORD:                Result := rvtDWord;
-//REG_DWORD_LITTLE_ENDIAN:  Result := rvtDWordLE; // the same as REG_DWORD, duplicit label
-  REG_DWORD_BIG_ENDIAN:     Result := rvtDWordBE;
-  REG_EXPAND_SZ:            Result := rvtExpandString;
-  REG_LINK:                 Result := rvtLink;
-  REG_MULTI_SZ:             Result := rvtMultiString;
-  REG_NONE:                 Result := rvtNone;
-  REG_QWORD:                Result := rvtQWord;
-//REG_QWORD_LITTLE_ENDIAN:  Result := rvtQWordLE; // the same as REG_QWORD, duplicit label
-  REG_SZ:                   Result := rvtString;
-else
-  Result := rvtUnknown;
+Result := [];
+SetResultAccessRight(KEY_QUERY_VALUE,karQueryValue);
+SetResultAccessRight(KEY_SET_VALUE,karSetValue);
+SetResultAccessRight(KEY_CREATE_SUB_KEY,karCreateSubKey);
+SetResultAccessRight(KEY_ENUMERATE_SUB_KEYS,karEnumerateSubKeys);
+SetResultAccessRight(KEY_NOTIFY,karNotify);
+SetResultAccessRight(KEY_CREATE_LINK,karCreateLink);
+SetResultAccessRight(KEY_WOW64_32KEY,karWoW64_32Key);
+SetResultAccessRight(KEY_WOW64_64KEY,karWoW64_64Key);
+SetResultAccessRight(_DELETE,karDelete);
+SetResultAccessRight(READ_CONTROL,karReadControl);
+SetResultAccessRight(WRITE_DAC,karWriteDAC);
+SetResultAccessRight(WRITE_OWNER,karWriteOwner);
+SetResultAccessRight(SYNCHRONIZE,karSynchronize);
 end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TranslateAccessRights(AccessRights: TRXKeyAccessRights): DWORD; overload;
+
+  procedure SetResultAccessRight(AccessRight: TRXKeyAccessRight; Flag: DWORD);
+  begin
+    If AccessRight in AccessRights then
+      Result := Result or Flag;
+  end;
+
+begin
+Result := 0;
+SetResultAccessRight(karQueryValue,KEY_QUERY_VALUE);
+SetResultAccessRight(karSetValue,KEY_SET_VALUE);
+SetResultAccessRight(karCreateSubKey,KEY_CREATE_SUB_KEY);
+SetResultAccessRight(karEnumerateSubKeys,KEY_ENUMERATE_SUB_KEYS);
+SetResultAccessRight(karNotify,KEY_NOTIFY);
+SetResultAccessRight(karCreateLink,KEY_CREATE_LINK);
+SetResultAccessRight(karWoW64_32Key,KEY_WOW64_32KEY);
+SetResultAccessRight(karWoW64_64Key,KEY_WOW64_64KEY);
+SetResultAccessRight(karDelete,_DELETE);
+SetResultAccessRight(karReadControl,READ_CONTROL);
+SetResultAccessRight(karWriteDAC,WRITE_DAC);
+SetResultAccessRight(karWriteOwner,WRITE_OWNER);
+SetResultAccessRight(karSynchronize,SYNCHRONIZE);
 end;
 
 //------------------------------------------------------------------------------
 
-Function DecodeValueType(ValueType: TRXValueType): DWORD;
+Function TranslateValueType(ValueType: DWORD): TRXValueType; overload;
 begin
 case ValueType of
-  rvtBinary:        Result := REG_BINARY;
-  rvtDWord:         Result := REG_DWORD;
-  rvtDWordLE:       Result := REG_DWORD_LITTLE_ENDIAN;
-  rvtDWordBE:       Result := REG_DWORD_BIG_ENDIAN;
-  rvtExpandString:  Result := REG_EXPAND_SZ;
-  rvtLink:          Result := REG_LINK;
-  rvtMultiString:   Result := REG_MULTI_SZ;
-  rvtNone:          Result := REG_NONE;
-  rvtQWord:         Result := REG_QWORD;
-  rvtQWordLE:       Result := REG_QWORD_LITTLE_ENDIAN;
-  rvtString:        Result := REG_SZ;
+  REG_NONE:                       Result := vtNone;
+  REG_SZ:                         Result := vtString;
+  REG_EXPAND_SZ:                  Result := vtExpandString;
+  REG_BINARY:                     Result := vtBinary;
+  REG_DWORD:                      Result := vtDWord;
+//REG_DWORD_LITTLE_ENDIAN:        Result := vtDWordLE;  // the same as REG_DWORD, duplicit label
+  REG_DWORD_BIG_ENDIAN:           Result := vtDWordBE;
+  REG_LINK:                       Result := vtLink;
+  REG_MULTI_SZ:                   Result := vtMultiString;
+  REG_RESOURCE_LIST:              Result := vtResourceList;
+  REG_FULL_RESOURCE_DESCRIPTOR:   Result := vtFullResourceDescriptor;
+  REG_RESOURCE_REQUIREMENTS_LIST: Result := vtResourceRequirementsList;
+  REG_QWORD:                      Result := vtQWord;
+//REG_QWORD_LITTLE_ENDIAN:        Result := vtQWordLE;  // the same as REG_QWORD, duplicit label
 else
+  Result := vtUnknown;
+end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TranslateValueType(ValueType: TRXValueType): DWORD; overload;
+begin
+case ValueType of
+  vtNone:                     Result := REG_NONE;
+  vtString:                   Result := REG_SZ;
+  vtExpandString:             Result := REG_EXPAND_SZ;
+  vtBinary:                   Result := REG_BINARY;
+  vtDWord:                    Result := REG_DWORD;
+  vtDWordLE:                  Result := REG_DWORD_LITTLE_ENDIAN;
+  vtDWordBE:                  Result := REG_DWORD_BIG_ENDIAN;
+  vtLink:                     Result := REG_LINK;
+  vtMultiString:              Result := REG_MULTI_SZ;
+  vtResourceList:             Result := REG_RESOURCE_LIST;
+  vtFullResourceDescriptor:   Result := REG_FULL_RESOURCE_DESCRIPTOR;
+  vtResourceRequirementsList: Result := REG_RESOURCE_REQUIREMENTS_LIST;
+  vtQWord:                    Result := REG_QWORD;
+  vtQWordLE:                  Result := REG_QWORD_LITTLE_ENDIAN;
+else
+ {rvtUnknown}
   Result := REG_NONE;
 end;
 end;
 
-//==============================================================================
+//------------------------------------------------------------------------------
+
+Function TranslatePredefinedKey(PredefinedKey: HKEY): TRXPredefinedKey; overload;
+begin
+case PredefinedKey of
+  HKEY_CLASSES_ROOT:                Result := pkClassesRoot;
+  HKEY_CURRENT_USER:                Result := pkCurrentUser;
+  HKEY_LOCAL_MACHINE:               Result := pkLocalMachine;
+  HKEY_USERS:                       Result := pkUsers;
+  HKEY_PERFORMANCE_DATA:            Result := pkPerformanceData;
+  HKEY_PERFORMANCE_TEXT:            Result := pkPerformanceText;
+  HKEY_PERFORMANCE_NLSTEXT:         Result := pkPerformanceNLSText;
+  HKEY_CURRENT_CONFIG:              Result := pkCurrentConfig;
+  HKEY_DYN_DATA:                    Result := pkDynData;
+  HKEY_CURRENT_USER_LOCAL_SETTINGS: Result := pkCurrentUserLocalSettings;
+else
+  raise ERXInvalidValue.CreateFmt('TranslatePredefinedKey: Invalid key (%d).',[PredefinedKey]);
+end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TranslatePredefinedKey(PredefinedKey: TRXPredefinedKey): HKEY; overload;
+begin
+case PredefinedKey of
+  pkClassesRoot:              Result := HKEY_CLASSES_ROOT;
+  pkCurrentUser:              Result := HKEY_CURRENT_USER;
+  pkLocalMachine:             Result := HKEY_LOCAL_MACHINE;
+  pkUsers:                    Result := HKEY_USERS;
+  pkPerformanceData:          Result := HKEY_PERFORMANCE_DATA;
+  pkPerformanceText:          Result := HKEY_PERFORMANCE_TEXT;
+  pkPerformanceNLSText:       Result := HKEY_PERFORMANCE_NLSTEXT;
+  pkCurrentConfig:            Result := HKEY_CURRENT_CONFIG;
+  pkDynData:                  Result := HKEY_DYN_DATA;
+  pkCurrentUserLocalSettings: Result := HKEY_CURRENT_USER_LOCAL_SETTINGS;
+else
+  raise ERXInvalidValue.CreateFmt('TranslatePredefinedKey: Invalid key (%d).',[Ord(PredefinedKey)]);
+end;
+end;
+
+
+{===============================================================================
+--------------------------------------------------------------------------------
+                                   TRegistryEx
+--------------------------------------------------------------------------------
+===============================================================================}
+{===============================================================================
+    TRegistryEx - class declaration
+===============================================================================}
+{-------------------------------------------------------------------------------
+    TRegistryEx - protected methods
+-------------------------------------------------------------------------------}
+
+procedure TRegistryEx.SetAccessRightsSys(Value: DWORD);
+begin
+fAccessRightsSys := Value;
+fAccessRights := TranslateAccessRights(Value);
+end;
+
+//------------------------------------------------------------------------------
 
 procedure TRegistryEx.SetAccessRights(Value: TRXKeyAccessRights);
 begin
-If Value <> fAccessRights then
-  begin
-    fAccessRights := Value;
-    fAccessRightsSys := 0;
-    If karDelete in fAccessRights then
-      SetFlagValue(fAccessRightsSys,_DELETE);
-    If karReadControl in fAccessRights then
-      SetFlagValue(fAccessRightsSys,READ_CONTROL);
-    If karWriteDAC in fAccessRights then
-      SetFlagValue(fAccessRightsSys,WRITE_DAC);
-    If karWriteOwner in fAccessRights then
-      SetFlagValue(fAccessRightsSys,WRITE_OWNER);
-    If karCreateLink in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_CREATE_LINK);
-    If karCreateSubKey in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_CREATE_SUB_KEY);
-    If karEnumerateSubKeys in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_ENUMERATE_SUB_KEYS);
-    If karExecute <= fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_EXECUTE);
-    If karNotify in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_NOTIFY);
-    If karQueryValue in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_QUERY_VALUE);
-    If karRead <= fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_READ);
-    If karSetValue in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_SET_VALUE);
-    If karWoW64_32Key in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_WOW64_32KEY);
-    If karWoW64_64Key in fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_WOW64_64KEY);
-    If karWrite <= fAccessRights then
-      SetFlagValue(fAccessRightsSys,KEY_WRITE);
-  end;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TRegistryEx.SetAccessRightsSys(Value: DWORD);
-
-  procedure SetRights(Flag: TRXKeyAccessRight; Value: Boolean); overload;
-  begin
-    If Value then
-      Include(fAccessRights,Flag);
-  end;
-
-  procedure SetRights(Flags: TRXKeyAccessRights; Value: Boolean); overload;
-  begin
-    If Value then
-      fAccessRights := fAccessRights + Flags;
-  end;
-
-begin
-If Value <> fAccessRightsSys then
-  begin
-    fAccessRights := [];
-    fAccessRightsSys := Value;
-    SetRights(karDelete,GetFlagState(fAccessRightsSys,_DELETE,True));
-    SetRights(karReadControl,GetFlagState(fAccessRightsSys,READ_CONTROL,True));
-    SetRights(karWriteDAC,GetFlagState(fAccessRightsSys,WRITE_DAC,True));
-    SetRights(karWriteOwner,GetFlagState(fAccessRightsSys,WRITE_OWNER,True));
-    SetRights(karCreateLink,GetFlagState(fAccessRightsSys,KEY_CREATE_LINK,True));
-    SetRights(karCreateSubKey,GetFlagState(fAccessRightsSys,KEY_CREATE_SUB_KEY,True));
-    SetRights(karEnumerateSubKeys,GetFlagState(fAccessRightsSys,KEY_ENUMERATE_SUB_KEYS,True));
-    SetRights(karExecute,GetFlagState(fAccessRightsSys,KEY_EXECUTE,True));
-    SetRights(karNotify,GetFlagState(fAccessRightsSys,KEY_NOTIFY,True));
-    SetRights(karQueryValue,GetFlagState(fAccessRightsSys,KEY_QUERY_VALUE,True));
-    SetRights(karRead,GetFlagState(fAccessRightsSys,KEY_READ,True));
-    SetRights(karSetValue,GetFlagState(fAccessRightsSys,KEY_SET_VALUE,True));
-    SetRights(karWoW64_32Key,GetFlagState(fAccessRightsSys,KEY_WOW64_32KEY,True));
-    SetRights(karWoW64_64Key,GetFlagState(fAccessRightsSys,KEY_WOW64_64KEY,True));
-    SetRights(karWrite,GetFlagState(fAccessRightsSys,KEY_WRITE,True));
-  end;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TRegistryEx.SetRootKey(Value: TRXRootKey);
-begin
-If Value <> fRootKey then
-  begin
-    ChangingRootKey;
-    fRootKey := Value;
-    case Value of
-      rkClassesRoot:              fRootKeyHandle := HKEY_CLASSES_ROOT;
-      rkCurrentUser:              fRootKeyHandle := HKEY_CURRENT_USER;
-      rkLocalMachine:             fRootKeyHandle := HKEY_LOCAL_MACHINE;
-      rkUsers:                    fRootKeyHandle := HKEY_USERS;
-      rkPerformanceData:          fRootKeyHandle := HKEY_PERFORMANCE_DATA;
-      rkPerformanceText:          fRootKeyHandle := HKEY_PERFORMANCE_TEXT;
-      rkPerformanceNLSText:       fRootKeyHandle := HKEY_PERFORMANCE_NLSTEXT;
-      rkCurrentConfig:            fRootKeyHandle := HKEY_CURRENT_CONFIG;
-      rkDynData:                  fRootKeyHandle := HKEY_DYN_DATA;
-      rkCurrentUserLocalSettings: fRootKeyHandle := HKEY_CURRENT_USER_LOCAL_SETTINGS;
-    else
-      raise Exception.CreateFmt('TRegistryEx.SetRootKey: Invalid root key (%d).',[Ord(Value)]);
-    end;
-  end;
+fAccessRightsSys := TranslateAccessRights(Value);
+fAccessRights := Value;
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.SetRootKeyHandle(Value: HKEY);
 begin
-If Value <> fRootKeyHandle then
-  begin
-    ChangingRootKey;
-    fRootKeyHandle := Value;
-    case Value of
-      HKEY_CLASSES_ROOT:                fRootKey := rkClassesRoot;
-      HKEY_CURRENT_USER:                fRootKey := rkCurrentUser;
-      HKEY_LOCAL_MACHINE:               fRootKey := rkLocalMachine;
-      HKEY_USERS:                       fRootKey := rkUsers;
-      HKEY_PERFORMANCE_DATA:            fRootKey := rkPerformanceData;
-      HKEY_PERFORMANCE_TEXT:            fRootKey := rkPerformanceText;
-      HKEY_PERFORMANCE_NLSTEXT:         fRootKey := rkPerformanceNLSText;
-      HKEY_CURRENT_CONFIG:              fRootKey := rkCurrentConfig;
-      HKEY_DYN_DATA:                    fRootKey := rkDynData;
-      HKEY_CURRENT_USER_LOCAL_SETTINGS: fRootKey := rkCurrentUserLocalSettings;
-    else
-      raise Exception.CreateFmt('TRegistryEx.SetRootKeyHandle: Invalid root key (%.8x).',[Value]);
-    end;
-  end;
+CloseKey;
+fRootKeyHandle := Value;
+fRootKey := TranslatePredefinedKey(Value);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.SetRootKey(Value: TRXPredefinedKey);
+begin
+CloseKey;
+fRootKeyHandle := TranslatePredefinedKey(Value);
+fRootKey := Value;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights);
+begin
+fAccessRightsSys := TranslateAccessRights(AccessRights);;
+fAccessRights := AccessRights;
+fRootKeyHandle := TranslatePredefinedKey(RootKey);
+fRootKey := RootKey;
+fCurrentKeyHandle := 0;
+fCurrentKeyName := '';
+fFlushOnClose := False;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.Finalize;
+begin
+CloseKey;
+end;
+
+{-------------------------------------------------------------------------------
+    TRegistryEx - public methods
+-------------------------------------------------------------------------------}
+
+class Function TRegistryEx.RegistryQuotaAllowed: UInt32;
+var
+  Allowed:  DWORD;
+  Used:     DWORD;
+begin
+If GetSystemRegistryQuota(@Allowed,@Used) then
+  Result := UInt32(Allowed)
+else
+  raise ERXSystemError.CreateFmt('TRegistryEx.RegistryQuotaAllowed: Cannot obtain registry quota (%d).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+class Function TRegistryEx.RegistryQuotaUsed: UInt32;
+var
+  Allowed:  DWORD;
+  Used:     DWORD;
+begin
+If GetSystemRegistryQuota(@Allowed,@Used) then
+  Result := UInt32(Used)
+else
+  raise ERXSystemError.CreateFmt('TRegistryEx.RegistryQuotaAllowed: Cannot obtain registry quota (%d).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+constructor TRegistryEx.Create(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights = karAllAccess);
+begin
+inherited Create;
+Initialize(RootKey,AccessRights);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TRegistryEx.Create(AccessRights: TRXKeyAccessRights = karAllAccess);
+begin
+Create(pkCurrentUser,AccessRights);
+end;
+
+//------------------------------------------------------------------------------
+
+destructor TRegistryEx.Destroy;
+begin
+Finalize;
+inherited;
 end;
 
 //==============================================================================
-
+(*
 class Function TRegistryEx.IsRelativeGetRectified(const KeyName: String; out RectifiedKeyName: String): Boolean;
 begin
 RectifiedKeyName := KeyName;
@@ -675,7 +960,7 @@ var
   Source:       HKEY;
   Destination:  HKEY;
 begin
-{$message 'reimplement - do not use SHCopyKeyW, it is recursive and might co into infinite cycle'}
+{$message 'reimplement - do not use SHCopyKeyW, it is recursive and might go into infinite cycle when copying into subnode'}
 Result := False;
 If KeyExists(SrcKey) and not KeyExists(DestKey) then
   begin
@@ -1696,5 +1981,5 @@ If TryReadBinaryStream(ValueName,Stream) then
 else
   raise Exception.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value %s.',[ValueName]);
 end;
-
+ *)
 end.
