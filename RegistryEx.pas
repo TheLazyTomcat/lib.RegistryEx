@@ -297,24 +297,6 @@ type
 {===============================================================================
     TRegistryEx - class declaration
 ===============================================================================}
-{
-  Some methods of TRegistryEx class have two overloads with distinct parameter
-  list. Those two overloads differ in what registry key is affected or operated
-  upon...
-
-    Case A - parameters RootKey of type TRXPredefinedKey and KeyName string
-
-      This function operates on a key given by KeyName that is a subkey of
-      predefined key given in parameter RootKey.
-
-    Case B - string parameter KeyName
-
-      If KeyName is relative (ie. does NOT start with path delimiter) and
-      current key is open (property CurrentKey[Handle/Name]), then this
-      function operates on a subkey given by parameter KeyName that is within
-      current key. Otherwise it operates on a subkey given by KeyName that is
-      within predefined key stored in object's property RootKey.
-}
 {$message 'todo: RegNotifyChangeKeyValue'}
 type
   TRegistryEx = class(TCustomObject)
@@ -326,126 +308,196 @@ type
     fCurrentKeyHandle:  HKEY;
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
-    // getters, setters
+    //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
     procedure SetRootKeyHandle(Value: HKEY); virtual;
     procedure SetRootKey(Value: TRXPredefinedKey); virtual;
     Function GetCurrentKeyReflection: Boolean; virtual;
     procedure SetCurrentKeyReflection(Value: Boolean); virtual;
-    // auxiliaty methods
-    Function GetWorkingKey(Relative: Boolean; out WorkingKeyName: String): HKEY; overload; virtual;
-    Function GetWorkingKey(Relative: Boolean): HKEY; overload; virtual;
+    //--- auxiliaty methods ---
     Function AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
     procedure ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
+    Function GetWorkingKey(Relative: Boolean; out WorkingKeyName: String): HKEY; overload; virtual;
+    Function GetWorkingKey(Relative: Boolean): HKEY; overload; virtual;
     Function GetKeyInfo(Key: HKEY; out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
+    procedure GetSubKeys(Key: HKEY; SubKeys: TStrings); overload; virtual;
     Function GetValueInfo(Key: HKEY; const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
-    // data access methods
+    procedure GetValues(Key: HKEY; Values: TStrings); overload; virtual;
+    procedure DeleteSubKeys(Key: HKEY); overload; virtual;
+    procedure DeleteValues(Key: HKEY); overload; virtual;
+    //--- data access methods ---
     Function GetValueDataOut(Key: HKEY; const ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataOut(Key: HKEY; const ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataExtBuff(Key: HKEY; const ValueName: String; out Data; var Size: TMemSize; ValueType: TRXValueType): Boolean; virtual;
-    Function GetValueData(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
-    Function GetValueData(Key: HKEY; const ValueName: String; out Data: Integer): Boolean; overload; virtual;
+    Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data: Integer): Boolean; overload; virtual;
     procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure SetValueData(Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
-    // init/final methods
+    //--- init/final methods ---
     procedure Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights); virtual;
     procedure Finalize; virtual;
   public
   {
-    If funtion RegistryQuota* fails to obtain the number, it will return 0. 
+    If funtions RegistryQuota* fails to obtain the number, they will return 0.
   }
     class Function RegistryQuotaAllowed: UInt32; virtual;
     class Function RegistryQuotaUsed: UInt32; virtual;
     constructor Create(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
     constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;  // root key is set to pkCurrentUser
     destructor Destroy; override;
-    // global registry functions
+    //--- global registry functions ---
     ////Function ConnectRegistry(const MachineName: String): Boolean; virtual;
     ////Function DisablePredefinedCache: Boolean; virtual;
+  {
+    Behavioral classes of TRegistyEx public methods:
 
-    // keys access
-    Function OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
-    Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; overload; virtual;
+      A - parameters RootKey of type TRXPredefinedKey and KeyName string
+
+        These functions operate on a key given by KeyName that is a subkey of
+        predefined key given in parameter RootKey.
+
+      B - string parameter KeyName
+
+        If KeyName is relative (ie. does NOT start with path delimiter) and
+        current key is open (property CurrentKey[Handle/Name]), then these
+        functions operate on a subkey given by parameter KeyName that is within
+        current key. Otherwise they operate on a subkey given by KeyName that
+        is within predefined key stored in object's property RootKey.
+
+      C - no common parameter
+
+        If current key is open, then these functions operate on the current
+        key and its values, otherwise they operate on predefined key stored in
+        property RootKey.
+        All write and read operations fall into this category.
+
+      D - no common parameter
+
+        Such functions are affecting only the current key, if any is open.
+        If no current key is open, then they have no effect.
+  }
+  {
+    OverridePredefinedKey maps specified predefined registry key to another
+    open key.
+
+    RestorePredefinedKey restores the default mapping for specified predefined
+    registry key.
+  }
+ {A}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {B}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {D}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; overload; virtual;
+ {-}Function RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
+    //--- keys management ---
+ {B}Function OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
+ {B}Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; overload; virtual;
   {
     OpenKeyReadOnly, when successful, will change AccessRight property to
     karRead, but it will also preserve karWoW64_32Key and karWoW64_64Key
     if they were previously set.
   }
-    Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
-  {
-    OverridePredefinedKey maps specified predefined registry key to current
-    open key. If no key is open as current, then nothing is done and the
-    function will return false.
-
-    RestorePredefinedKey restores the default mapping for specified predefined
-    registry key.
-  }
-    Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
-    Function RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
+ {B}Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
   {
     KeyExists tries to open given key for reading. When it succeeds, it is
     assumed the key exists, otherwise it is assumed it does not exist.
   }
-    Function KeyExists(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
-    Function KeyExists(const KeyName: String): Boolean; overload; virtual;
-    Function CreateKey(RootKey: TRXPredefinedKey; const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
-    Function CreateKey(const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
-    Function DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
-    Function DeleteKey(const KeyName: String): Boolean; overload; virtual;
-
+ {A}Function KeyExists(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {B}Function KeyExists(const KeyName: String): Boolean; overload; virtual;
+ {A}Function CreateKey(RootKey: TRXPredefinedKey; const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
+ {B}Function CreateKey(const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
+ {A}Function DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {B}Function DeleteKey(const KeyName: String): Boolean; overload; virtual;
+ {D}procedure FlushKey; virtual;
+ {D}procedure CloseKey; virtual;
+    //--- key information ---
+ {A}Function GetKeyInfo(RootKey: TRXPredefinedKey; const KeyName: String; out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
+ {B}Function GetKeyInfo(const KeyName: String; out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
+ {C}Function GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
+ {A}Function HasSubKeys(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {B}Function HasSubKeys(const KeyName: String): Boolean; overload; virtual;
+ {C}Function HasSubKeys: Boolean; overload; virtual;
+ {A}procedure GetSubKeys(RootKey: TRXPredefinedKey; const KeyName: String; SubKeys: TStrings); overload; virtual;
+ {B}procedure GetSubKeys(const KeyName: String; SubKeys: TStrings); overload; virtual;
+ {C}procedure GetSubKeys(SubKeys: TStrings); overload; virtual;
+    //--- values information/access ---
+ {A}Function GetValueInfo(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
+ {B}Function GetValueInfo(const KeyName,ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
+ {C}Function GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
+ {A}Function HasValues(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {B}Function HasValues(const KeyName: String): Boolean; overload; virtual;
+ {C}Function HasValues: Boolean; overload; virtual;
+ {A}procedure GetValues(RootKey: TRXPredefinedKey; const KeyName: String; Values: TStrings); overload; virtual;
+ {B}procedure GetValues(const KeyName: String; Values: TStrings); overload; virtual;
+ {C}procedure GetValues(Values: TStrings); overload; virtual;
+  {
+    GetValueType will return vtUnknown in case the value does not exist or
+    cannot be queried in general.
+  }
+ {A}Function GetValueType(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TRXValueType; overload; virtual;
+ {B}Function GetValueType(const KeyName,ValueName: String): TRXValueType; overload; virtual;
+ {C}Function GetValueType(const ValueName: String): TRXValueType; overload; virtual;
+  {
+    GetValueDataSize will return 0 in case the value does not exist or cannot
+    be queried.
+  }
+ {A}Function GetValueDataSize(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TMemSize; overload; virtual;
+ {B}Function GetValueDataSize(const KeyName,ValueName: String): TMemSize; overload; virtual;
+ {C}Function GetValueDataSize(const ValueName: String): TMemSize; overload; virtual;
+ {A}Function ValueExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
+ {B}Function ValueExists(const KeyName,ValueName: String): Boolean; overload; virtual;
+ {C}Function ValueExists(const ValueName: String): Boolean; overload; virtual;
+ {A}Function DeleteValue(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
+ {B}Function DeleteValue(const KeyName,ValueName: String): Boolean; overload; virtual;
+ {C}Function DeleteValue(const ValueName: String): Boolean; overload; virtual;
+    //--- content deletion ---
+ {A}procedure DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String); overload; virtual;
+ {B}procedure DeleteSubKeys(const KeyName: String); overload; virtual;
+ {C}procedure DeleteSubKeys; overload; virtual;
+ {A}procedure DeleteValues(RootKey: TRXPredefinedKey; const KeyName: String); overload; virtual;
+ {B}procedure DeleteValues(const KeyName: String); overload; virtual;
+ {C}procedure DeleteValues; overload; virtual;
+ {A}procedure DeleteContent(RootKey: TRXPredefinedKey; const KeyName: String); overload; virtual;
+ {B}procedure DeleteContent(const KeyName: String); overload; virtual;
+ {C}procedure DeleteContent; overload; virtual;
+    //--- advanced keys and values manipulation ---
     //Function CopyKey(const SrcKey, DestKey: String): Boolean; virtual;
+  {
+    Afaik there is no way to directly rename a value, so it is instead copied
+    to a new value with NewName and the original (OldName) is then deleted.
+  }
   {
     Note that MoveKey can be used to effectively rename a key.
   }
     //Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
+ {C}Function RenameValue(const OldName, NewName: String): Boolean; virtual;   
+{AA}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AB}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AC}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{BA}//Function CopyValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BB}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BC}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{CA}//Function CopyValue(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CB}//Function CopyValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CC}//Function CopyValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
 
+{AA}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AB}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AC}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{BA}//Function MoveValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BB}//Function MoveValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BC}//Function MoveValue(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{CA}//Function MoveValue(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CB}//Function MoveValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CC}//Function MoveValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+
+    //--- keys saving and loading ---
     ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
     ////Function LoadKey(const Key, FileName: string): Boolean; virtual;
     ////RegReplaceKey
     ////RegRestoreKey
     ////UnLoadKey
 
-    procedure FlushKey; virtual;
-    procedure CloseKey; virtual;
-
-    //procedure DeleteSubKeys; virtual;
-    //procedure DeleteValues; virtual;
-    //procedure DeleteContent; virtual;
-  {
-    Key info
-
-    Functions GetKeyInfo, GetSubKeys and HasSubKeys are returning information
-    about current key when any is open, otherwise they return information about
-    the root key.
-  }
-    Function GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
-    procedure GetSubKeys(SubKeys: TStrings); virtual;
-    Function HasSubKeys: Boolean; virtual;
-  {
-    Key values info/access
-
-    Functions GetValueInfo, GetValueType, GetValueDataSize, ValueExists,
-    GetValues, RenameValue and DeleteValue are operating on values in current
-    key when any is open, otherwise they operate on values in the root key.
-  }
-    Function GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
-  {
-    GetValueType will return vtUnknown in case the value does not exist or
-    cannot be queried in general.
-  }
-    Function GetValueType(const ValueName: String): TRXValueType; virtual;
-  {
-    GetValueDataSize will return 0 in case the value does not exist or cannot
-    be queried.
-  }
-    Function GetValueDataSize(const ValueName: String): TMemSize; virtual;
-    Function ValueExists(const ValueName: String): Boolean; virtual;
-    procedure GetValues(Values: TStrings); virtual;
-    Function RenameValue(const OldName, NewName: String): Boolean; virtual;
-    Function DeleteValue(const ValueName: String): Boolean; virtual;
-
-    // key values write
+    //--- key values write ---
     procedure WriteBool(const ValueName: String; Value: Boolean); virtual;
     procedure WriteInt8(const ValueName: String; Value: Int8); virtual;
     procedure WriteUInt8(const ValueName: String; Value: UInt8); virtual;
@@ -470,7 +522,7 @@ type
     procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); virtual;
     procedure WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
     procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;  
-    // key values try-read
+    //--- key values try-read ---
     Function TryReadBool(const ValueName: String; out Value: Boolean): Boolean; virtual;
     Function TryReadInt8(const ValueName: String; out Value: Int8): Boolean; virtual;
     Function TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean; virtual;
@@ -520,7 +572,7 @@ type
   }
     Function TryReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean; virtual;
     Function TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean; virtual;
-    // key values read-def
+    //--- key values read-def ---
     Function ReadBoolDef(const ValueName: String; Default: Boolean): Boolean; virtual;
     Function ReadInt8Def(const ValueName: String; Default: Int8): Int8; virtual;
     Function ReadUInt8Def(const ValueName: String; Default: UInt8): UInt8; virtual;
@@ -540,7 +592,7 @@ type
     Function ReadTimeDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
     Function ReadStringDef(const ValueName: String; const Default: String): String; virtual;
     Function ReadExpandStringDef(const ValueName: String; const Default: String): String; virtual;
-    // key values read
+    //--- key values read ---
     Function ReadBool(const ValueName: String): Boolean; virtual;
     Function ReadInt8(const ValueName: String): Int8; virtual;
     Function ReadUInt8(const ValueName: String): UInt8; virtual;
@@ -568,12 +620,13 @@ type
     Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; virtual;
     Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; virtual;
   {
-    ReadBinaryMemoryOut returns internally alocated memory space along with its
-    size, that is containing the read data. Use standard memory management
-    functions to free this space.
+    ReadBinaryMemoryOut returns internally alocated memory space that is
+    containing the read data along with its size. Use standard memory
+    management functions to free this space.
   }
     Function ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize; virtual;
     procedure ReadBinaryStream(const ValueName: String; Stream: TStream); virtual;
+    //--- properties --- 
   {
     Following access rights will be used in next call to OpenKey.
   }
@@ -590,7 +643,7 @@ type
     If there is no current key open, then CurrentKeyReflection returns false
     and changing it has no effect.
     Also, this settings is working only on 64bit system, it has no effect and
-    reads as false on 32bit systems.
+    returns false on 32bit systems.
   }
     property CurrentKeyReflection: Boolean read GetCurrentKeyReflection write SetCurrentKeyReflection;
   {
@@ -606,7 +659,7 @@ type
 implementation
 
 uses
-  StrRect, {$IFNDEF CPU64bit}WindowsVersion,{$ENDIF} DynLibUtils;
+  {$IFNDEF CPU64bit}WindowsVersion,{$ENDIF} StrRect, DynLibUtils;
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -643,10 +696,9 @@ Function RegEnumValueW(
 ): LSTATUS; stdcall; external 'advapi32.dll';
 
 Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'shlwapi.dll';
+//Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'Shlwapi.dll';
 
 Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
-
-//Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'Shlwapi.dll';
 
 // dynamically linked functions (might not be present on all systems (namely Windows XP 32bit)
 var
@@ -999,6 +1051,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
+begin
+Result := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey) = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String);
+begin
+CloseKey;
+fCurrentKeyHandle := KeyHandle;
+fCurrentKeyName := KeyName;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.GetWorkingKey(Relative: Boolean; out WorkingKeyName: String): HKEY;
 begin
 If Relative and (fCurrentKeyHandle <> 0) then
@@ -1024,22 +1092,6 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
-begin
-Result := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey) = ERROR_SUCCESS;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TRegistryEx.ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String);
-begin
-CloseKey;
-fCurrentKeyHandle := KeyHandle;
-fCurrentKeyName := KeyName;
-end;
-
-//------------------------------------------------------------------------------
-
 Function TRegistryEx.GetKeyInfo(Key: HKEY; out KeyInfo: TRXKeyInfo): Boolean;
 var
   LastWriteTime:  TFileTime;
@@ -1058,6 +1110,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.GetSubKeys(Key: HKEY; SubKeys: TStrings);
+var
+  KeyInfo:  TRXKeyInfo;
+  i:        Integer;
+  TempStr:  WideString;
+  Len:      DWORD;
+begin
+SubKeys.Clear;
+If GetKeyInfo(Key,KeyInfo) then
+  begin
+    i := 0;  
+    SetLength(TempStr,KeyInfo.MaxSubKeyLen + 1);
+    while True do
+      begin
+        Len := Length(TempStr);
+        case RegEnumKeyExW(Key,DWORD(i),PWideChar(TempStr),Len,nil,nil,nil,nil) of
+          ERROR_SUCCESS:
+            SubKeys.Add(WideToStr(Copy(TempStr,1,Len)));
+          ERROR_MORE_DATA:
+            begin
+              SetLength(TempStr,Length(TempStr) * 2);
+              Dec(i); // call RegEnumKeyExW again with the same index
+            end;
+        else
+         {ERROR_NO_MORE_ITEMS, or some other error}
+          Break{while};
+        end;
+        Inc(i);
+      end;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.GetValueInfo(Key: HKEY; const ValueName: String; out ValueInfo: TRXValueInfo): Boolean;
 var
   ValueType:  DWORD;
@@ -1071,6 +1157,66 @@ If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@ValueType,nil,@Data
     ValueInfo.DataSize := TMemSize(DataSize);
     Result := True;
   end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.GetValues(Key: HKEY; Values: TStrings);
+var
+  i:        Integer;
+  TempStr:  WideString;
+  Len:      DWORD;
+begin
+Values.Clear;
+i := 0;
+SetLength(TempStr,16383); // limit for a value name length
+while True do
+  begin
+    Len := Length(TempStr);
+    case RegEnumValueW(Key,DWORD(i),PWideChar(TempStr),@Len,nil,nil,nil,nil) of
+      ERROR_SUCCESS,
+      ERROR_MORE_DATA:
+        Values.Add(WideToStr(Copy(TempStr,1,Len)));
+    else
+     {ERROR_NO_MORE_ITEMS, other errors}
+      Break{while};
+    end;
+    Inc(i);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteSubKeys(Key: HKEY);
+var
+  SubKeys:  TStringList;
+  i:        Integer;
+begin
+SubKeys := TStringList.Create;
+try
+  GetSubKeys(Key,SubKeys);
+  For i := 0 to Pred(SubKeys.Count) do
+    SHDeleteKeyW(Key,PWideChar(StrToWide(SubKeys[i])))
+finally
+  SubKeys.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteValues(Key: HKEY);
+var
+  Values: TStringList;
+  i:      Integer;
+begin
+Values := TStringList.Create;
+try
+  GetValues(Key,Values);
+  For i := 0 to Pred(Values.Count) do
+    RegDeleteValueW(Key,PWideChar(StrToWide(Values[i])))
+finally
+  Values.Free;
+end;
 end;
 
 //------------------------------------------------------------------------------
@@ -1203,7 +1349,7 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.GetValueData(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
+Function TRegistryEx.GetValueDataStat(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
 var
   RegDataSize:  DWORD;
   RegValueType: DWORD;
@@ -1222,11 +1368,11 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.GetValueData(Key: HKEY; const ValueName: String; out Data: Integer): Boolean;
+Function TRegistryEx.GetValueDataStat(Key: HKEY; const ValueName: String; out Data: Integer): Boolean;
 var
   Temp: DWORD;
 begin
-Result := GetValueData(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := GetValueDataStat(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
 Data := Integer(Temp);
 end;
 
@@ -1324,6 +1470,54 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+{$message 'check rights'}
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+  try
+    Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey) = ERROR_SUCCESS
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; const KeyName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+  try
+    Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey) = ERROR_SUCCESS
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean;
+begin
+If fCurrentKeyHandle <> 0 then
+  Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),fCurrentKeyHandle) = ERROR_SUCCESS
+else
+  Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean;
+begin
+Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),0) = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean;
 var
   TempKey:        HKEY;
@@ -1381,23 +1575,6 @@ If Result then
     SetAccessRightsSys(AccessRights);
     ChangeCurrentKey(TempKey,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)));
   end;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean;
-begin
-If fCurrentKeyHandle <> 0 then
-  Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),fCurrentKeyHandle) = ERROR_SUCCESS
-else
-  Result := False;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean;
-begin
-Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),0) = ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -1468,16 +1645,14 @@ end;
 
 Function TRegistryEx.DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
 begin
-Result := SHDeleteKeyW(TranslatePredefinedKey(RootKey),
-  PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS;
+Result := SHDeleteKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.DeleteKey(const KeyName: String): Boolean;
 begin
-Result := SHDeleteKeyW(GetWorkingKey(IsRelativeKeyName(KeyName)),
-  PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS;
+Result := SHDeleteKeyW(GetWorkingKey(IsRelativeKeyName(KeyName)),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -1504,6 +1679,36 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.GetKeyInfo(RootKey: TRXPredefinedKey; const KeyName: String; out KeyInfo: TRXKeyInfo): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetKeyInfo(TempKey,KeyInfo);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetKeyInfo(const KeyName: String; out KeyInfo: TRXKeyInfo): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetKeyInfo(TempKey,KeyInfo);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.GetKeyInfo(out KeyInfo: TRXKeyInfo): Boolean;
 begin
 Result := GetKeyInfo(GetWorkingKey(True),KeyInfo);
@@ -1511,41 +1716,29 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.GetSubKeys(SubKeys: TStrings);
+Function TRegistryEx.HasSubKeys(RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
 var
-  Key:      HKEY;
   KeyInfo:  TRXKeyInfo;
-  i:        Integer;
-  TempStr:  WideString;
-  Len:      DWORD;
 begin
-SubKeys.Clear;
-Key := GetWorkingKey(True);
-If GetKeyInfo(Key,KeyInfo) then
-  begin
-    i := 0;  
-    SetLength(TempStr,KeyInfo.MaxSubKeyLen + 1);
-    while True do
-      begin
-        Len := Length(TempStr);
-        case RegEnumKeyExW(Key,DWORD(i),PWideChar(TempStr),Len,nil,nil,nil,nil) of
-          ERROR_SUCCESS:
-            SubKeys.Add(WideToStr(Copy(TempStr,1,Len)));
-          ERROR_MORE_DATA:
-            begin
-              SetLength(TempStr,Length(TempStr) * 2);
-              Dec(i); // call RegEnumKeyExW again with the same index
-            end;
-        else
-         {ERROR_NO_MORE_ITEMS, or some other error}
-          Break{while};
-        end;
-        Inc(i);
-      end;
-  end;
+If GetKeyInfo(RootKey,KeyName,KeyInfo) then
+  Result := KeyInfo.SubKeys > 0
+else
+  Result := False;
 end;
 
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.HasSubKeys(const KeyName: String): Boolean;
+var
+  KeyInfo:  TRXKeyInfo;
+begin
+If GetKeyInfo(KeyName,KeyInfo) then
+  Result := KeyInfo.SubKeys > 0
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.HasSubKeys: Boolean;
 var
@@ -1559,12 +1752,176 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.GetSubKeys(RootKey: TRXPredefinedKey; const KeyName: String; SubKeys: TStrings);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
+  try
+    GetSubKeys(TempKey,SubKeys);
+  finally
+    RegCloseKey(TempKey);
+  end
+else SubKeys.Clear;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.GetSubKeys(const KeyName: String; SubKeys: TStrings);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
+  try
+    GetSubKeys(TempKey,SubKeys);
+  finally
+    RegCloseKey(TempKey);
+  end
+else SubKeys.Clear;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.GetSubKeys(SubKeys: TStrings);
+begin
+GetSubKeys(GetWorkingKey(True),SubKeys);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetValueInfo(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out ValueInfo: TRXValueInfo): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueInfo(TempKey,ValueName,ValueInfo);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetValueInfo(const KeyName,ValueName: String; out ValueInfo: TRXValueInfo): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueInfo(TempKey,ValueName,ValueInfo);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.GetValueInfo(const ValueName: String; out ValueInfo: TRXValueInfo): Boolean;
 begin
 Result := GetValueInfo(GetWorkingKey(True),ValueName,ValueInfo);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.HasValues(RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
+var
+  KeyInfo:  TRXKeyInfo;
+begin
+If GetKeyInfo(RootKey,KeyName,KeyInfo) then
+  Result := KeyInfo.Values > 0
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.HasValues(const KeyName: String): Boolean;
+var
+  KeyInfo:  TRXKeyInfo;
+begin
+If GetKeyInfo(KeyName,KeyInfo) then
+  Result := KeyInfo.Values > 0
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.HasValues: Boolean;
+var
+  KeyInfo:  TRXKeyInfo;
+begin
+If GetKeyInfo(KeyInfo) then
+  Result := KeyInfo.Values > 0
+else
+  Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.GetValues(RootKey: TRXPredefinedKey; const KeyName: String; Values: TStrings);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    GetValues(TempKey,Values);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Values.Clear;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.GetValues(const KeyName: String; Values: TStrings);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    GetValues(TempKey,Values);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Values.Clear;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.GetValues(Values: TStrings);
+begin
+GetValues(GetWorkingKey(True),Values);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetValueType(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TRXValueType;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+If GetValueInfo(RootKey,KeyName,ValueName,ValueInfo) then
+  Result := ValueInfo.ValueType
+else
+  Result := vtUnknown;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetValueType(const KeyName,ValueName: String): TRXValueType;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+If GetValueInfo(KeyName,ValueName,ValueInfo) then
+  Result := ValueInfo.ValueType
+else
+  Result := vtUnknown;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.GetValueType(const ValueName: String): TRXValueType;
 var
@@ -1578,6 +1935,30 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.GetValueDataSize(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TMemSize;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+If GetValueInfo(RootKey,KeyName,ValueName,ValueInfo) then
+  Result := ValueInfo.DataSize
+else
+  Result := 0;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetValueDataSize(const KeyName,ValueName: String): TMemSize;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+If GetValueInfo(KeyName,ValueName,ValueInfo) then
+  Result := ValueInfo.DataSize
+else
+  Result := 0;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.GetValueDataSize(const ValueName: String): TMemSize;
 var
   ValueInfo:  TRXValueInfo;
@@ -1590,6 +1971,24 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ValueExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+Result := GetValueInfo(RootKey,KeyName,ValueName,ValueInfo);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ValueExists(const KeyName,ValueName: String): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+Result := GetValueInfo(KeyName,ValueName,ValueInfo);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ValueExists(const ValueName: String): Boolean;
 var
   ValueInfo:  TRXValueInfo;
@@ -1599,30 +1998,137 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.GetValues(Values: TStrings);
+Function TRegistryEx.DeleteValue(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean;
 var
-  Key:      HKEY;
-  i:        Integer;
-  TempStr:  WideString;
-  Len:      DWORD;
+  TempKey:  HKEY;
 begin
-Values.Clear;
-Key := GetWorkingKey(True);
-i := 0;
-SetLength(TempStr,16383); // limit for a value name length
-while True do
-  begin
-    Len := Length(TempStr);
-    case RegEnumValueW(Key,DWORD(i),PWideChar(TempStr),@Len,nil,nil,nil,nil) of
-      ERROR_SUCCESS,
-      ERROR_MORE_DATA:
-        Values.Add(WideToStr(Copy(TempStr,1,Len)));
-    else
-     {ERROR_NO_MORE_ITEMS, other errors}
-      Break{while};
-    end;
-    Inc(i);
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
+  try
+    Result := RegDeleteValueW(TempKey,PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.DeleteValue(const KeyName,ValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
+  try
+    Result := RegDeleteValueW(TempKey,PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.DeleteValue(const ValueName: String): Boolean;
+begin
+Result := RegDeleteValueW(GetWorkingKey(True),PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
+              KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    DeleteSubKeys(TempKey);
+  finally
+    RegCloseKey(TempKey);
   end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteSubKeys(const KeyName: String);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
+                            KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    DeleteSubKeys(TempKey);
+  finally
+    RegCloseKey(TempKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteSubKeys;
+begin
+DeleteSubKeys(GetWorkingKey(True));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteValues(RootKey: TRXPredefinedKey; const KeyName: String);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
+              KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    DeleteValues(TempKey);
+  finally
+    RegCloseKey(TempKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteValues(const KeyName: String);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
+              KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    DeleteValues(TempKey);
+  finally
+    RegCloseKey(TempKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteValues;
+begin
+DeleteValues(GetWorkingKey(True));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.DeleteContent(RootKey: TRXPredefinedKey; const KeyName: String);
+begin
+DeleteSubKeys(RootKey,KeyName);
+DeleteValues(RootKey,KeyName);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteContent(const KeyName: String);
+begin
+DeleteSubKeys(KeyName);
+DeleteValues(KeyName);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteContent;
+begin
+DeleteSubKeys;
+DeleteValues;
 end;
 
 //------------------------------------------------------------------------------
@@ -1632,10 +2138,6 @@ var
   ValueInfo:  TRXValueInfo;
   Buffer:     Pointer;
 begin
-{
-  AFAIK there is no way to directly rename a value, instead a copy with NewName
-  is created and the original is then deleted.
-}
 Result := False;
 If ValueExists(OldName) and not ValueExists(NewName) then
   If GetValueInfo(OldName,ValueInfo) then
@@ -1643,10 +2145,11 @@ If ValueExists(OldName) and not ValueExists(NewName) then
       begin
         GetMem(Buffer,ValueInfo.DataSize);
         try
-          If GetValueData(GetWorkingKey(True),OldName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType) then
+          If GetValueDataStat(GetWorkingKey(True),OldName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType) then
             begin
               SetValueData(GetWorkingKey(True),NewName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType);
-              DeleteValue(OldName);
+              If not DeleteValue(OldName) then
+                DeleteValue(NewName);
               Result := True;
             end;
         finally
@@ -1656,16 +2159,10 @@ If ValueExists(OldName) and not ValueExists(NewName) then
     else
       begin
         SetValueData(GetWorkingKey(True),NewName,nil^,0,ValueInfo.ValueType);
-        DeleteValue(OldName);
+        If not DeleteValue(OldName) then
+          DeleteValue(NewName);
         Result := True;
       end;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.DeleteValue(const ValueName: String): Boolean;
-begin
-Result := RegDeleteValueW(GetWorkingKey(True),PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
 end;
 
 //------------------------------------------------------------------------------
@@ -1828,7 +2325,7 @@ begin
 If Value.Count > 0 then
   begin
     // calculate final length/size of saved data
-    Len := 1;
+    Len := 1; // list ternimation
     For i := 0 to Pred(Value.Count) do
       Len := Len + Length(StrToWide(Value[i])) + 1;
     // preallocate temp
@@ -1895,7 +2392,7 @@ Function TRegistryEx.TryReadBool(const ValueName: String; out Value: Boolean): B
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := Temp <> 0;
 end;
 
@@ -1905,7 +2402,7 @@ Function TRegistryEx.TryReadInt8(const ValueName: String; out Value: Int8): Bool
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := Int8(Temp);
 end;
 
@@ -1915,7 +2412,7 @@ Function TRegistryEx.TryReadUInt8(const ValueName: String; out Value: UInt8): Bo
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := UInt8(Temp);
 end;
 
@@ -1925,7 +2422,7 @@ Function TRegistryEx.TryReadInt16(const ValueName: String; out Value: Int16): Bo
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := Int16(Temp);
 end;
 
@@ -1935,7 +2432,7 @@ Function TRegistryEx.TryReadUInt16(const ValueName: String; out Value: UInt16): 
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := UInt16(Temp);
 end;
 
@@ -1945,7 +2442,7 @@ Function TRegistryEx.TryReadInt32(const ValueName: String; out Value: Int32): Bo
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := Int32(Temp);
 end;
  
@@ -1955,7 +2452,7 @@ Function TRegistryEx.TryReadUInt32(const ValueName: String; out Value: UInt32): 
 var
   Temp: Integer;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
 Value := UInt32(Temp);
 end;
 
@@ -1963,35 +2460,35 @@ end;
 
 Function TRegistryEx.TryReadInt64(const ValueName: String; out Value: Int64): Boolean;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(UInt64),vtQWord);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(UInt64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.TryReadInteger(const ValueName: String; out Value: Integer): Boolean;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Value);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.TryReadFloat32(const ValueName: String; out Value: Float32): Boolean;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.TryReadFloat64(const ValueName: String; out Value: Float64): Boolean;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -2005,7 +2502,7 @@ end;
 
 Function TRegistryEx.TryReadCurrency(const ValueName: String; out Value: Currency): Boolean;
 begin
-Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
+Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
 end;
  
 //------------------------------------------------------------------------------
@@ -2125,9 +2622,12 @@ var
   Size:   TMemSize;
 begin
 If GetValueDataOut(GetWorkingKey(True),ValueName,Buffer,Size,vtBinary) then
-  Result := TMemSize(Stream.Write(Buffer^,LongInt(Size))) = Size
-else
-  Result := False;
+  begin
+    Stream.WriteBuffer(Buffer^,LongInt(Size));
+    FreeMem(Buffer,Size);
+    Result := True;
+  end
+else Result := False;
 end;
 
 //------------------------------------------------------------------------------
@@ -2511,135 +3011,7 @@ Result := False;
 If CopyKey(SrcKey,DestKey) then
   Result := DeleteKey(SrcKey);
 end;
-
-//------------------------------------------------------------------------------
-
-procedure TRegistryEx.DeleteSubKeys;
-var
-  SubKeys:  TStringList;
-  i:        Integer;
-begin
-SubKeys := TStringList.Create;
-try
-  GetSubKeys(SubKeys);
-  For i := 0 to Pred(SubKeys.Count) do
-    DeleteKey(fCurrentKeyName + REG_PATH_DLEIMITER + SubKeys[i]);
-finally
-  SubKeys.Free;
-end;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TRegistryEx.DeleteValues;
-var
-  Values: TStringList;
-  i:      Integer;
-begin
-Values := TStringList.Create;
-try
-  GetValues(Values);
-  For i := 0 to Pred(Values.Count) do
-    DeleteValue(Values[i]);
-finally
-  Values.Free;
-end;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TRegistryEx.DeleteContent;
-begin
-DeleteSubKeys;
-DeleteValues;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean;
-var
-  DataSize: TMemSize;
-begin
-Result := False;
-DataSize := GetValueDataSize(ValueName);
-If DataSize <= Size then
-  begin
-    If GetValueData(ValueName,Buff,DataSize,rvtBinary) then
-      begin
-        Size := DataSize;
-        Result := True;
-      end;
-  end
-else
-  begin
-    Size := 0;
-    Result := True;
-  end;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean;
-begin
-Result := TryReadBinaryBuffer(ValueName,Memory^,Size);
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean;
-var
-  Buffer:   Pointer;
-  DataSize: TMemSize;
-begin
-Result := False;
-DataSize := GetValueDataSize(ValueName);
-If DataSize > 0 then
-  begin
-    GetMem(Buffer,DataSize);
-    try
-      If GetValueData(ValueName,Buffer^,DataSize,rvtBinary) then
-        begin
-          Stream.WriteBuffer(Buffer^,DataSize);
-          Result := True;
-        end;
-    finally
-      FreeMem(Buffer,DataSize);
-    end;
-  end
-else Result := True;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize;
-begin
-Result := Size;
-If not TryReadBinaryBuffer(ValueName,Buff,Result) then
-  raise Exception.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value %s.',[ValueName]);
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
-begin
-Result := Size;
-If not TryReadBinaryMemory(ValueName,Memory,Result) then
-  raise Exception.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value %s.',[ValueName]);
-end;
-
-//------------------------------------------------------------------------------
- 
-Function TRegistryEx.ReadBinaryStream(const ValueName: String; Stream: TStream): TMemSize;
-var
-  InitPos:  Int64;
-begin
-InitPos := Stream.Position;
-If TryReadBinaryStream(ValueName,Stream) then
-  Result := TMemSize(Stream.Position - InitPos)
-else
-  raise Exception.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value %s.',[ValueName]);
-end;
- *)
+*)
 
 
 {===============================================================================
