@@ -308,13 +308,16 @@ type
     fCurrentKeyHandle:  HKEY;
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
+    fAuxOpenResult:     Integer;  // system error code from last call to AuxOpenKey
     //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
     procedure SetRootKeyHandle(Value: HKEY); virtual;
     procedure SetRootKey(Value: TRXPredefinedKey); virtual;
+    Function GetRootKeyString: String; virtual;
     Function GetCurrentKeyReflection: Boolean; virtual;
     procedure SetCurrentKeyReflection(Value: Boolean); virtual;
+    Function GetCurrentKeyPath: String; virtual;
     //--- auxiliaty methods ---
     Function AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
     procedure ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
@@ -327,13 +330,17 @@ type
     procedure DeleteSubKeys(Key: HKEY); overload; virtual;
     procedure DeleteValues(Key: HKEY); overload; virtual;
     //--- data access methods ---
+    procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure SetValueData(Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
+    procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure WriteMacro(const TypeName,KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer); overload; virtual;
+    procedure WriteMacro(const TypeName,KeyName,ValueName: String; Value: Integer); overload; virtual;
     Function GetValueDataOut(Key: HKEY; const ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataOut(Key: HKEY; const ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataExtBuff(Key: HKEY; const ValueName: String; out Data; var Size: TMemSize; ValueType: TRXValueType): Boolean; virtual;
     Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data: Integer): Boolean; overload; virtual;
-    procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
-    procedure SetValueData(Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
     //--- init/final methods ---
     procedure Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights); virtual;
     procedure Finalize; virtual;
@@ -389,12 +396,14 @@ type
  {D}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; overload; virtual;
  {-}Function RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
     //--- keys management ---
+ {A}Function OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
  {B}Function OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
+ {A}Function OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean): Boolean; overload; virtual;
  {B}Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; overload; virtual;
   {
     OpenKeyReadOnly, when successful, will change AccessRight property to
-    karRead, but it will also preserve karWoW64_32Key and karWoW64_64Key
-    if they were previously set.
+    karRead, but it will also preserve karWoW64_32Key and karWoW64_64Key if
+    they were previously set.
   }
  {B}Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
   {
@@ -460,26 +469,23 @@ type
  {B}procedure DeleteContent(const KeyName: String); overload; virtual;
  {C}procedure DeleteContent; overload; virtual;
     //--- advanced keys and values manipulation ---
-    //Function CopyKey(const SrcKey, DestKey: String): Boolean; virtual;
-  {
-    Afaik there is no way to directly rename a value, so it is instead copied
-    to a new value with NewName and the original (OldName) is then deleted.
-  }
+    //Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKey: String; DestRootKey: TRXPredefinedKey; const DestKey: String): Boolean; overload; virtual;
+    Function CopyKey(const SrcKey, DestKey: String): Boolean; overload; virtual;
   {
     Note that MoveKey can be used to effectively rename a key.
   }
     //Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
- {C}Function RenameValue(const OldName, NewName: String): Boolean; virtual;   
-{AA}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{AB}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{AC}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-{BA}//Function CopyValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{BB}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{BC}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-{CA}//Function CopyValue(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{CB}//Function CopyValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{CC}//Function CopyValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+    //Function RenameKey(const OldName, NewName: String): Boolean; virtual;
+  {
+    Afaik there is no way to directly rename a value, so it is instead copied
+    to a new value with NewName and the original (OldName) is then deleted.
+  }
+    {$message 'copy security descr'}
+    //Function RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldName, NewName: String): Boolean; virtual;
+    //Function RenameValue(const KeyName,OldName, NewName: String): Boolean; virtual;
+ {C}Function RenameValue(const OldName, NewName: String): Boolean; virtual;
 
+    // moving between keys
 {AA}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
 {AB}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
 {AC}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
@@ -490,6 +496,21 @@ type
 {CB}//Function MoveValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
 {CC}//Function MoveValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
 
+    // moving within one key
+    //Function MoveValue(RootKey: TRXPredefinedKey; const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
+    //Function MoveValue(const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
+    //Function MoveValue(const SrcValueName,DstValueName: String): Boolean; overload; virtual;
+
+{AA}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AB}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AC}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{BA}//Function CopyValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BB}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BC}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{CA}//Function CopyValue(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CB}//Function CopyValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CC}//Function CopyValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+
     //--- keys saving and loading ---
     ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
     ////Function LoadKey(const Key, FileName: string): Boolean; virtual;
@@ -498,30 +519,108 @@ type
     ////UnLoadKey
 
     //--- key values write ---
-    procedure WriteBool(const ValueName: String; Value: Boolean); virtual;
-    procedure WriteInt8(const ValueName: String; Value: Int8); virtual;
-    procedure WriteUInt8(const ValueName: String; Value: UInt8); virtual;
-    procedure WriteInt16(const ValueName: String; Value: Int16); virtual;
-    procedure WriteUInt16(const ValueName: String; Value: UInt16); virtual;
-    procedure WriteInt32(const ValueName: String; Value: Int32); virtual;
-    procedure WriteUInt32(const ValueName: String; Value: UInt32); virtual;
-    procedure WriteInt64(const ValueName: String; Value: Int64); virtual;
-    procedure WriteUInt64(const ValueName: String; Value: UInt64); virtual;
-    procedure WriteInteger(const ValueName: String; Value: Integer); virtual;
-    procedure WriteFloat32(const ValueName: String; Value: Float32); virtual;
-    procedure WriteFloat64(const ValueName: String; Value: Float64); virtual;
-    procedure WriteFloat(const ValueName: String; Value: Double); virtual;
-    procedure WriteCurrency(const ValueName: String; Value: Currency); virtual;
-    procedure WriteDateTime(const ValueName: String; Value: TDateTime); virtual;
-    procedure WriteDate(const ValueName: String; Value: TDateTime); virtual;
-    procedure WriteTime(const ValueName: String; Value: TDateTime); virtual;
-    procedure WriteString(const ValueName: String; const Value: String); virtual;
-    procedure WriteExpandString(const ValueName: String; const Value: String; UnExpand: Boolean = False); virtual;
-    procedure WriteMultiString(const ValueName: String; Value: TStrings); virtual;
-    procedure WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize); virtual;
-    procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); virtual;
+  {
+    When writing to other key than current or predefined, the key must already
+    exists, otherwise an ERXRegistryWriteError exception is raised.
+  }
+    procedure WriteBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Boolean); overload; virtual;
+    procedure WriteBool(const KeyName,ValueName: String; Value: Boolean); overload; virtual;
+    procedure WriteBool(const ValueName: String; Value: Boolean); overload; virtual;
+
+    procedure WriteInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int8); overload; virtual;
+    procedure WriteInt8(const KeyName,ValueName: String; Value: Int8); overload; virtual;
+    procedure WriteInt8(const ValueName: String; Value: Int8); overload; virtual;
+
+    procedure WriteUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt8); overload; virtual;
+    procedure WriteUInt8(const KeyName,ValueName: String; Value: UInt8); overload; virtual;
+    procedure WriteUInt8(const ValueName: String; Value: UInt8); overload; virtual;
+
+    procedure WriteInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int16); overload; virtual;
+    procedure WriteInt16(const KeyName,ValueName: String; Value: Int16); overload; virtual;
+    procedure WriteInt16(const ValueName: String; Value: Int16); overload; virtual;
+
+    procedure WriteUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt16); overload; virtual;
+    procedure WriteUInt16(const KeyName,ValueName: String; Value: UInt16); overload; virtual;
+    procedure WriteUInt16(const ValueName: String; Value: UInt16); overload; virtual;
+
+    procedure WriteInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int32); overload; virtual;
+    procedure WriteInt32(const KeyName,ValueName: String; Value: Int32); overload; virtual;
+    procedure WriteInt32(const ValueName: String; Value: Int32); overload; virtual;
+
+    procedure WriteUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt32); overload; virtual;
+    procedure WriteUInt32(const KeyName,ValueName: String; Value: UInt32); overload; virtual;
+    procedure WriteUInt32(const ValueName: String; Value: UInt32); overload; virtual;
+
+    procedure WriteInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int64); overload; virtual;
+    procedure WriteInt64(const KeyName,ValueName: String; Value: Int64); overload; virtual;
+    procedure WriteInt64(const ValueName: String; Value: Int64); overload; virtual;
+
+    procedure WriteUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt64); overload; virtual;
+    procedure WriteUInt64(const KeyName,ValueName: String; Value: UInt64); overload; virtual;
+    procedure WriteUInt64(const ValueName: String; Value: UInt64); overload; virtual;
+
+    procedure WriteInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer); overload; virtual;
+    procedure WriteInteger(const KeyName,ValueName: String; Value: Integer); overload; virtual;
+    procedure WriteInteger(const ValueName: String; Value: Integer); overload; virtual;
+
+    procedure WriteFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float32); overload; virtual;
+    procedure WriteFloat32(const KeyName,ValueName: String; Value: Float32); overload; virtual;
+    procedure WriteFloat32(const ValueName: String; Value: Float32); overload; virtual;
+
+    procedure WriteFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float64); overload; virtual;
+    procedure WriteFloat64(const KeyName,ValueName: String; Value: Float64); overload; virtual;
+    procedure WriteFloat64(const ValueName: String; Value: Float64); overload; virtual;
+
+    procedure WriteFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Double); overload; virtual;
+    procedure WriteFloat(const KeyName,ValueName: String; Value: Double); overload; virtual;
+    procedure WriteFloat(const ValueName: String; Value: Double); overload; virtual;
+
+    procedure WriteCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Currency); overload; virtual;
+    procedure WriteCurrency(const KeyName,ValueName: String; Value: Currency); overload; virtual;
+    procedure WriteCurrency(const ValueName: String; Value: Currency); overload; virtual;
+
+    procedure WriteDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+    procedure WriteDateTime(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+    procedure WriteDateTime(const ValueName: String; Value: TDateTime); overload; virtual;
+
+    procedure WriteDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+    procedure WriteDate(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+    procedure WriteDate(const ValueName: String; Value: TDateTime); overload; virtual;
+
+    procedure WriteTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+    procedure WriteTime(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+    procedure WriteTime(const ValueName: String; Value: TDateTime); overload; virtual;
+
+    procedure WriteString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String); overload; virtual;
+    procedure WriteString(const KeyName,ValueName: String; const Value: String); overload; virtual;
+    procedure WriteString(const ValueName: String; const Value: String); overload; virtual;
+
+    procedure WriteExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
+    procedure WriteExpandString(const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
+    procedure WriteExpandString(const ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
+
+    procedure WriteMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings); overload; virtual;
+    procedure WriteMultiString(const KeyName,ValueName: String; Value: TStrings); overload; virtual;
+    procedure WriteMultiString(const ValueName: String; Value: TStrings); overload; virtual;
+
+    procedure WriteBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Buff; Size: TMemSize); overload; virtual;
+    procedure WriteBinaryBuffer(const KeyName,ValueName: String; const Buff; Size: TMemSize); overload; virtual;
+    procedure WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize); overload; virtual;
+
+    procedure WriteBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
+    procedure WriteBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
+    procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
+  {
+    Position of the passed stream is undefined after the call, do not assume
+    anything about its value.
+  }
+    procedure WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
+    procedure WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
     procedure WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
-    procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;  
+
+    procedure WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream); overload; virtual;
+    procedure WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream); overload; virtual;
+    procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
     //--- key values try-read ---
     Function TryReadBool(const ValueName: String; out Value: Boolean): Boolean; virtual;
     Function TryReadInt8(const ValueName: String; out Value: Int8): Boolean; virtual;
@@ -637,6 +736,7 @@ type
   }
     property RootKeyHandle: HKEY read fRootKeyHandle write SetRootKeyHandle;
     property RootKey: TRXPredefinedKey read fRootKey write SetRootKey;
+    property RootKeyString: String read GetRootKeyString;
     property CurrentKeyHandle: HKEY read fCurrentKeyHandle;
     property CurrentKeyName: String read fCurrentKeyName;
   {
@@ -646,6 +746,7 @@ type
     returns false on 32bit systems.
   }
     property CurrentKeyReflection: Boolean read GetCurrentKeyReflection write SetCurrentKeyReflection;
+    property CurrentKeyPath: String read GetCurrentKeyPath;
   {
     When FlushOnClose is set to true (by default false), the current key is
     flushed before it is closed - meaning all changes made to it are immediately
@@ -696,7 +797,7 @@ Function RegEnumValueW(
 ): LSTATUS; stdcall; external 'advapi32.dll';
 
 Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'shlwapi.dll';
-//Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'Shlwapi.dll';
+Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'shlwapi.dll';
 
 Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
 
@@ -709,31 +810,6 @@ var
 {===============================================================================
     TRegistryEx - internal functions
 ===============================================================================}
-
-Function WStrLen(const Str: WideString): TStrOff;
-var
-  i:  Integer;
-begin
-Result := 0;
-For i := 1 to Length(Str) do
-  If Str[i] = WideChar(#0) then
-    begin
-      Result := Pred(i);
-      Break{For i};
-    end;
-end;
-
-//------------------------------------------------------------------------------
-
-Function BoolToNum(Value: Boolean): Integer;
-begin
-If Value then
-  Result := -1
-else
-  Result := 0;
-end;
-
-//------------------------------------------------------------------------------
 
 Function FileTimeToDateTime(FileTime: TFileTime): TDateTime;
 var
@@ -748,6 +824,73 @@ If FileTimeToLocalFileTime(FileTime,LocalTime) then
       raise ERXTimeConversionError.CreateFmt('FileTimeToDateTime: Unable to convert to system time (%d).',[GetLastError]);
   end
 else raise ERXTimeConversionError.CreateFmt('FileTimeToDateTime: Unable to convert to local file time (%d).',[GetLastError]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function BoolToNum(Value: Boolean): Integer;
+begin
+If Value then
+  Result := -1
+else
+  Result := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function UnExpandString(const Str: String): WideString;
+
+  Function WStrLen(const Str: WideString): TStrOff;
+  var
+    i:  Integer;
+  begin
+    Result := 0;
+    For i := 1 to Length(Str) do
+      If Str[i] = WideChar(#0) then
+        begin
+          Result := Pred(i);
+          Break{For i};
+        end;
+  end;
+  
+var
+  Temp: WideString;
+begin
+Temp := StrToWide(Str);
+SetLength(Result,UNICODE_STRING_MAX_CHARS);
+If PathUnExpandEnvStringsW(PWideChar(Temp),PWideChar(Result),Length(Result)) then
+  SetLength(Result,WStrLen(Result))
+else
+  Result := StrToWide(Str);
+end;
+
+//------------------------------------------------------------------------------
+
+Function UnParseMultiString(Strs: TStrings): WideString;
+var
+  Item:     WideString;
+  i:        Integer;
+  Len,Pos:  Integer;
+begin
+If Strs.Count > 0 then
+  begin
+    // calculate final length/size of saved data
+    Len := 1; // list ternimation
+    For i := 0 to Pred(Strs.Count) do
+      Len := Len + Length(StrToWide(Strs[i])) + 1;
+    // preallocate result
+    SetLength(Result,Len);
+    FillChar(PWideChar(Result)^,Length(Result) * SizeOf(WideChar),0);
+    // fill result
+    Pos := 1;
+    For i := 0 to Pred(Strs.Count) do
+      begin
+        Item := StrToWide(Strs[i]);
+        Move(PWideChar(Item)^,Addr(Result[Pos])^,Length(Item) * SizeOf(WideChar));
+        Pos := Pos + Length(Item) + 1;
+      end;
+  end
+else Result := WideChar(#0);
 end;
 
 //------------------------------------------------------------------------------
@@ -965,6 +1108,34 @@ else
 end;
 end;
 
+//------------------------------------------------------------------------------
+
+Function PredefinedKeyToStr(PredefinedKey: HKEY): String; overload;
+begin
+case PredefinedKey of
+  HKEY_CLASSES_ROOT:                Result := 'HKEY_CLASSES_ROOT';
+  HKEY_CURRENT_USER:                Result := 'HKEY_CURRENT_USER';
+  HKEY_LOCAL_MACHINE:               Result := 'HKEY_LOCAL_MACHINE';
+  HKEY_USERS:                       Result := 'HKEY_USERS';
+  HKEY_PERFORMANCE_DATA:            Result := 'HKEY_PERFORMANCE_DATA';
+  HKEY_PERFORMANCE_TEXT:            Result := 'HKEY_PERFORMANCE_TEXT';
+  HKEY_PERFORMANCE_NLSTEXT:         Result := 'HKEY_PERFORMANCE_NLSTEXT';
+  HKEY_CURRENT_CONFIG:              Result := 'HKEY_CURRENT_CONFIG';
+  HKEY_DYN_DATA:                    Result := 'HKEY_DYN_DATA';
+  HKEY_CURRENT_USER_LOCAL_SETTINGS: Result := 'HKEY_CURRENT_USER_LOCAL_SETTINGS';
+else
+  Result := '';
+end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function PredefinedKeyToStr(PredefinedKey: TRXPredefinedKey): String; overload;
+begin
+Result := PredefinedKeyToStr(TranslatePredefinedKey(PredefinedKey));
+end;
+
+
 {===============================================================================
     TRegistryEx - class declaration
 ===============================================================================}
@@ -1012,6 +1183,13 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.GetRootKeyString: String;
+begin
+Result := PredefinedKeyToStr(fRootKeyHandle);
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.GetCurrentKeyReflection: Boolean;
 var
   Value:  BOOL;
@@ -1051,9 +1229,20 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.GetCurrentKeyPath: String;
+begin
+If Length(fCurrentKeyName) > 0 then
+  Result := ConcatKeyNames(RootKeyString,fCurrentKeyName)
+else
+  result := '';
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
 begin
-Result := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey) = ERROR_SUCCESS;
+fAuxOpenResult := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey);
+Result := fAuxOpenResult = ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -1221,6 +1410,79 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
+var
+  CallResult: LSTATUS;
+begin
+CallResult := RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size));
+If CallResult <> ERROR_SUCCESS then
+  raise ERXRegistryWriteError.CreateFmt('TRegistryEx.SetValueData: Unable to write value "%s" (%d).',[ValueName,CallResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; Data: Integer);
+var
+  Temp: DWORD;
+begin
+Temp := DWORD(Data);
+SetValueData(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
+  try
+    SetValueData(TempKey,ValueName,Value,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXRegistryWriteError.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteMacro(const TypeName,KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
+  try
+    SetValueData(TempKey,ValueName,Value,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXRegistryWriteError.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
+  [TypeName,KeyName,fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer);
+var
+  Temp: DWORD;
+begin
+Temp := DWORD(Value);
+WriteMacro(TypeName,RootKey,KeyName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteMacro(const TypeName,KeyName,ValueName: String; Value: Integer);
+var
+  Temp: DWORD;
+begin
+Temp := DWORD(Value);
+WriteMacro(TypeName,KeyName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.GetValueDataOut(Key: HKEY; const ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean;
 var
   RegDataSize:  DWORD;
@@ -1378,27 +1640,6 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
-var
-  CallResult: LSTATUS;
-begin
-CallResult := RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size));
-If CallResult <> ERROR_SUCCESS then
-  raise ERXRegistryWriteError.CreateFmt('TRegistryEx.SetValueData: Unable to write value %s (%d).',[ValueName,CallResult]);
-end;
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; Data: Integer);
-var
-  Temp: DWORD;
-begin
-Temp := DWORD(Data);
-SetValueData(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
-end;
-
-//------------------------------------------------------------------------------
-
 procedure TRegistryEx.Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights);
 begin
 fAccessRightsSys := TranslateAccessRights(AccessRights);;
@@ -1474,7 +1715,6 @@ Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; Root
 var
   TempKey:  HKEY;
 begin
-{$message 'check rights'}
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
   try
     Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey) = ERROR_SUCCESS
@@ -1518,6 +1758,41 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean;
+var
+  TempKey:      HKEY;
+  Disposition:  DWORD;
+begin
+If CanCreate then
+  begin
+    Result := RegCreateKeyExW(TranslatePredefinedKey(RootKey),
+                              PWideChar(StrToWide(TrimKeyName(KeyName))),
+                              0,nil,TranslateCreateOptions(CreateOptions),
+                              fAccessRightsSys,nil,TempKey,@Disposition) = ERROR_SUCCESS;
+    case Disposition of
+      REG_CREATED_NEW_KEY:      Created := True;
+      REG_OPENED_EXISTING_KEY:  Created := False;
+    else
+      raise ERXInvalidValue.CreateFmt('TRegistryEx.OpenKey: Invalid disposition (%d).',[Disposition]);
+    end;
+  end
+else
+  begin
+    Result := RegOpenKeyExW(TranslatePredefinedKey(RootKey),
+                            PWideChar(StrToWide(TrimKeyName(KeyName))),
+                            0,fAccessRightsSys,TempKey) = ERROR_SUCCESS;
+    Created := False;
+  end;
+If Result then
+  begin
+    fRootKeyHandle := TranslatePredefinedKey(RootKey);
+    fRootKey := RootKey;
+    ChangeCurrentKey(TempKey,TrimKeyName(KeyName));
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean;
 var
   TempKey:        HKEY;
@@ -1546,6 +1821,15 @@ else
   end;
 If Result then
   ChangeCurrentKey(TempKey,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean): Boolean;
+var
+  Created:  Boolean;
+begin
+Result := OpenKey(RootKey,KeyName,CanCreate,Created);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1756,7 +2040,7 @@ procedure TRegistryEx.GetSubKeys(RootKey: TRXPredefinedKey; const KeyName: Strin
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,TempKey) then
   try
     GetSubKeys(TempKey,SubKeys);
   finally
@@ -1771,7 +2055,7 @@ procedure TRegistryEx.GetSubKeys(const KeyName: String; SubKeys: TStrings);
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,TempKey) then
   try
     GetSubKeys(TempKey,SubKeys);
   finally
@@ -2131,6 +2415,32 @@ DeleteSubKeys;
 DeleteValues;
 end;
 
+Function TRegistryEx.CopyKey(const SrcKey, DestKey: String): Boolean;
+var
+  Source:       HKEY;
+  Destination:  HKEY;
+begin
+{$message 'reimplement - do not use SHCopyKeyW, it is recursive and might go into infinite cycle when copying into subnode'}
+Result := False;
+If KeyExists(SrcKey) and not KeyExists(DestKey) then
+  begin
+    CreateKey(DestKey);
+    //Source := OpenKeyInternal(SrcKey,fAccessRightsSys);
+    //Destination := OpenKeyInternal(DestKey,fAccessRightsSys);
+    If AuxOpenKey(fCurrentKeyHandle,SrcKey,KEY_ALL_ACCESS,Source) then
+      try
+        If AuxOpenKey(fCurrentKeyHandle,DestKey,KEY_ALL_ACCESS,Destination) then
+          try
+            Result := SHCopyKeyW(Source,nil,Destination,0) = ERROR_SUCCESS;
+          finally
+            RegCloseKey(Destination);
+          end;
+      finally
+        RegCloseKey(Source);
+      end;
+  end;
+end;
+
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.RenameValue(const OldName, NewName: String): Boolean;
@@ -2167,12 +2477,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Boolean);
+begin
+WriteMacro('Bool',RootKey,KeyName,ValueName,BoolToNum(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteBool(const KeyName,ValueName: String; Value: Boolean);
+begin
+WriteMacro('Bool',KeyName,ValueName,BoolToNum(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteBool(const ValueName: String; Value: Boolean);
 begin
 SetValueData(GetWorkingKey(True),ValueName,BoolToNum(Value));
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int8);
+begin
+WriteMacro('Int8',RootKey,KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteInt8(const KeyName,ValueName: String; Value: Int8);
+begin
+WriteMacro('Int8',KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteInt8(const ValueName: String; Value: Int8);
 begin
@@ -2181,12 +2519,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt8);
+begin
+WriteMacro('UInt8',RootKey,KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteUInt8(const KeyName,ValueName: String; Value: UInt8);
+begin
+WriteMacro('UInt8',KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteUInt8(const ValueName: String; Value: UInt8);
 begin
 SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int16);
+begin
+WriteMacro('Int16',RootKey,KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteInt16(const KeyName,ValueName: String; Value: Int16);
+begin
+WriteMacro('Int16',KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteInt16(const ValueName: String; Value: Int16); 
 begin
@@ -2195,12 +2561,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt16);
+begin
+WriteMacro('UInt16',RootKey,KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteUInt16(const KeyName,ValueName: String; Value: UInt16);
+begin
+WriteMacro('UInt16',KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteUInt16(const ValueName: String; Value: UInt16); 
 begin
 SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int32);
+begin
+WriteMacro('Int32',RootKey,KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteInt32(const KeyName,ValueName: String; Value: Int32);
+begin
+WriteMacro('Int32',KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteInt32(const ValueName: String; Value: Int32);
 begin
@@ -2209,12 +2603,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt32);
+begin
+WriteMacro('UInt32',RootKey,KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteUInt32(const KeyName,ValueName: String; Value: UInt32);
+begin
+WriteMacro('UInt32',KeyName,ValueName,Integer(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteUInt32(const ValueName: String; Value: UInt32); 
 begin
 SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int64);
+begin
+WriteMacro('Int64',RootKey,KeyName,ValueName,Value,SizeOf(Int64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteInt64(const KeyName,ValueName: String; Value: Int64);
+begin
+WriteMacro('Int64',KeyName,ValueName,Value,SizeOf(Int64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteInt64(const ValueName: String; Value: Int64);
 begin
@@ -2223,12 +2645,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt64);
+begin
+WriteMacro('UInt64',RootKey,KeyName,ValueName,Value,SizeOf(UInt64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteUInt64(const KeyName,ValueName: String; Value: UInt64);
+begin
+WriteMacro('UInt64',KeyName,ValueName,Value,SizeOf(UInt64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteUInt64(const ValueName: String; Value: UInt64);
 begin
 SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer);
+begin
+WriteMacro('Integer',RootKey,KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteInteger(const KeyName,ValueName: String; Value: Integer);
+begin
+WriteMacro('Integer',KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteInteger(const ValueName: String; Value: Integer);
 begin
@@ -2237,12 +2687,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float32);
+begin
+WriteMacro('Float32',RootKey,KeyName,ValueName,Value,SizeOf(Float32),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteFloat32(const KeyName,ValueName: String; Value: Float32);
+begin
+WriteMacro('Float32',KeyName,ValueName,Value,SizeOf(Float32),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteFloat32(const ValueName: String; Value: Float32);
 begin
 SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float64);
+begin
+WriteMacro('Float64',RootKey,KeyName,ValueName,Value,SizeOf(Float64),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteFloat64(const KeyName,ValueName: String; Value: Float64);
+begin
+WriteMacro('Float64',KeyName,ValueName,Value,SizeOf(Float64),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteFloat64(const ValueName: String; Value: Float64);
 begin
@@ -2251,12 +2729,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Double);
+begin
+WriteFloat64(RootKey,KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteFloat(const KeyName,ValueName: String; Value: Double);
+begin
+WriteFloat64(KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteFloat(const ValueName: String; Value: Double);
 begin
 WriteFloat64(ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Currency);
+begin
+WriteMacro('Currency',RootKey,KeyName,ValueName,Value,SizeOf(Currency),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteCurrency(const KeyName,ValueName: String; Value: Currency);
+begin
+WriteMacro('Currency',KeyName,ValueName,Value,SizeOf(Currency),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteCurrency(const ValueName: String; Value: Currency);
 begin
@@ -2265,12 +2771,40 @@ end;
  
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(RootKey,KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteDateTime(const KeyName,ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteDateTime(const ValueName: String; Value: TDateTime);
 begin
 WriteFloat64(ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(RootKey,KeyName,ValueName,Int(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteDate(const KeyName,ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(KeyName,ValueName,Int(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteDate(const ValueName: String; Value: TDateTime);
 begin
@@ -2279,6 +2813,20 @@ end;
  
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(RootKey,KeyName,ValueName,Frac(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteTime(const KeyName,ValueName: String; Value: TDateTime);
+begin
+WriteFloat64(KeyName,ValueName,Frac(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteTime(const ValueName: String; Value: TDateTime);
 begin
 WriteFloat64(ValueName,Frac(Value));
@@ -2286,70 +2834,118 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String);
+var
+  Temp: WideString;
+begin
+Temp := StrToWide(Value);
+WriteMacro('String',RootKey,KeyName,ValueName,PWideChar(Temp)^,(Length(Temp) + 1{terminating zero}) * SizeOf(WideChar),vtString);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteString(const KeyName,ValueName: String; const Value: String);
+var
+  Temp: WideString;
+begin
+Temp := StrToWide(Value);
+WriteMacro('String',KeyName,ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtString);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteString(const ValueName: String; const Value: String);
 var
   Temp: WideString;
 begin
 Temp := StrToWide(Value);
-SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1{terminating zero}) * SizeOf(WideChar),vtString);
+SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtString);
 end;
  
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.WriteExpandString(const ValueName: String; const Value: String; UnExpand: Boolean = False);
+procedure TRegistryEx.WriteExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False);
 var
-  WideVal:  WideString;
-  Temp:     WideString;
+  Temp: WideString;
 begin
 If UnExpand then
-  begin
-    WideVal := StrToWide(Value);
-    SetLength(Temp,UNICODE_STRING_MAX_CHARS);
-    If PathUnExpandEnvStringsW(PWideChar(WideVal),PWideChar(Temp),Length(Temp)) then
-      SetLength(Temp,WStrLen(Temp))
-    else
-      Temp := StrToWide(Value);
-  end
-else Temp := StrToWide(Value);
+  Temp := UnExpandString(Value)
+else
+  Temp := StrToWide(Value);
+WriteMacro('ExpandString',RootKey,KeyName,ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtExpandString);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteExpandString(const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False);
+var
+  Temp: WideString;
+begin
+If UnExpand then
+  Temp := UnExpandString(Value)
+else
+  Temp := StrToWide(Value);
+WriteMacro('ExpandString',KeyName,ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtExpandString);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteExpandString(const ValueName: String; const Value: String; UnExpand: Boolean = False);
+var
+  Temp: WideString;
+begin
+If UnExpand then
+  Temp := UnExpandString(Value)
+else
+  Temp := StrToWide(Value);
 SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtExpandString);
 end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings);
+var
+  Temp: WideString;
+begin
+Temp := UnParseMultiString(Value);
+WriteMacro('MultiString',RootKey,KeyName,ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtMultiString);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteMultiString(const KeyName,ValueName: String; Value: TStrings);
+var
+  Temp: WideString;
+begin
+Temp := UnParseMultiString(Value);
+WriteMacro('MultiString',KeyName,ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtMultiString);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteMultiString(const ValueName: String; Value: TStrings);
 var
-  Temp,Item:  WideString;
-  i:          Integer;
-  Len,Pos:    Integer;
+  Temp: WideString;
 begin
-If Value.Count > 0 then
-  begin
-    // calculate final length/size of saved data
-    Len := 1; // list ternimation
-    For i := 0 to Pred(Value.Count) do
-      Len := Len + Length(StrToWide(Value[i])) + 1;
-    // preallocate temp
-    SetLength(Temp,Len);
-    FillChar(PWideChar(Temp)^,Length(Temp) * SizeOf(WideChar),0);
-    // fill temp
-    Pos := 1;
-    For i := 0 to Pred(Value.Count) do
-      begin
-        Item := StrToWide(Value[i]);
-        Move(PWideChar(Item)^,Addr(Temp[Pos])^,Length(Item) * SizeOf(WideChar));
-        Pos := Pos + Length(Item) + 1;
-      end;
-    // store
-    SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,Length(Temp) * SizeOf(WideChar),vtMultiString);
-  end
-else
-  begin
-    Temp := WideChar(#0);
-    SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,SizeOf(WideChar),vtMultiString);
-  end;
+Temp := UnParseMultiString(Value);
+SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,Length(Temp) * SizeOf(WideChar),vtMultiString);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Buff; Size: TMemSize);
+begin
+WriteMacro('BinaryBuffer',RootKey,KeyName,ValueName,Buff,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteBinaryBuffer(const KeyName,ValueName: String; const Buff; Size: TMemSize);
+begin
+WriteMacro('BinaryBuffer',KeyName,ValueName,Buff,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize);
 begin
@@ -2358,12 +2954,58 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.WriteBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize);
+begin
+WriteMacro('BinaryMemory',RootKey,KeyName,ValueName,Memory^,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize);
+begin
+WriteMacro('BinaryMemory',KeyName,ValueName,Memory^,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize);
 begin
 SetValueData(GetWorkingKey(True),ValueName,Memory^,Size,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64);
+var
+  Buffer: Pointer;
+begin
+GetMem(Buffer,TMemSize(Count));
+try
+  Stream.Seek(Position,soBeginning);
+  Stream.ReadBuffer(Buffer^,Count);
+  WriteMacro('BinaryStream',RootKey,KeyName,ValueName,Buffer^,TMemSize(Count),vtBinary);
+finally
+  FreeMem(Buffer,TMemSize(Count));
+end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64);
+var
+  Buffer: Pointer;
+begin
+GetMem(Buffer,TMemSize(Count));
+try
+  Stream.Seek(Position,soBeginning);
+  Stream.ReadBuffer(Buffer^,Count);
+  WriteMacro('BinaryStream',KeyName,ValueName,Buffer^,TMemSize(Count),vtBinary);
+finally
+  FreeMem(Buffer,TMemSize(Count));
+end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64);
 var
@@ -2380,6 +3022,20 @@ end;
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream);
+begin
+WriteBinaryStream(RootKey,KeyName,ValueName,Stream,0,Stream.Size);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream);
+begin
+WriteBinaryStream(KeyName,ValueName,Stream,0,Stream.Size);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteBinaryStream(const ValueName: String; Stream: TStream);
 begin
