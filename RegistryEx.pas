@@ -16,18 +16,8 @@ unit RegistryEx;
   {$MODE ObjFPC}
   {$MODESWITCH DuplicateLocals+}
   {$MODESWITCH PointerToProcVar+}
-  //{$INLINE ON}
-  //{$DEFINE CanInline}
-  //{$DEFINE FPC_DisableWarns}
-  //{$MACRO ON}
-{$ELSE}
-(*
-  {$IF CompilerVersion >= 17 then}  // Delphi 2005+
-    {$DEFINE CanInline}
-  {$ELSE}
-    {$UNDEF CanInline}
-  {$IFEND}
-*)
+  {$DEFINE FPC_DisableWarns}
+  {$MACRO ON}
 {$ENDIF}
 {$H+}
 
@@ -769,40 +759,88 @@ type
  {B}Function ReadExpandStringDef(const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
  {C}Function ReadExpandStringDef(const ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
     //--- values read ---
-    Function ReadBool(const ValueName: String): Boolean; overload; virtual;
-    Function ReadInt8(const ValueName: String): Int8; overload; virtual;
-    Function ReadUInt8(const ValueName: String): UInt8; overload; virtual;
-    Function ReadInt16(const ValueName: String): Int16; overload; virtual;
-    Function ReadUInt16(const ValueName: String): UInt16; overload; virtual;
-    Function ReadInt32(const ValueName: String): Int32; overload; virtual;
-    Function ReadUInt32(const ValueName: String): UInt32; overload; virtual;
-    Function ReadInt64(const ValueName: String): Int64; overload; virtual;
-    Function ReadUInt64(const ValueName: String): UInt64; overload; virtual;
-    Function ReadInteger(const ValueName: String): Integer; overload; virtual;
-    Function ReadFloat32(const ValueName: String): Float32; overload; virtual;
-    Function ReadFloat64(const ValueName: String): Float64; overload; virtual;
-    Function ReadFloat(const ValueName: String): Double; overload; virtual;
-    Function ReadCurrency(const ValueName: String): Currency; overload; virtual;
-    Function ReadDateTime(const ValueName: String): TDateTime; overload; virtual;
-    Function ReadDate(const ValueName: String): TDateTime; overload; virtual;
-    Function ReadTime(const ValueName: String): TDateTime; overload; virtual;
-    Function ReadString(const ValueName: String): String; overload; virtual;
-    Function ReadExpandString(const ValueName: String; Expand: Boolean = False): String; overload; virtual;
-    procedure ReadMultiString(const ValueName: String; Value: TStrings); overload; virtual;
+ {A}Function ReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
+ {B}Function ReadBool(const KeyName,ValueName: String): Boolean; overload; virtual;
+ {C}Function ReadBool(const ValueName: String): Boolean; overload; virtual;
+ {A}Function ReadInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int8; overload; virtual;
+ {B}Function ReadInt8(const KeyName,ValueName: String): Int8; overload; virtual;
+ {C}Function ReadInt8(const ValueName: String): Int8; overload; virtual;
+ {A}Function ReadUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt8; overload; virtual;
+ {B}Function ReadUInt8(const KeyName,ValueName: String): UInt8; overload; virtual;
+ {C}Function ReadUInt8(const ValueName: String): UInt8; overload; virtual;
+ {A}Function ReadInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int16; overload; virtual;
+ {B}Function ReadInt16(const KeyName,ValueName: String): Int16; overload; virtual;
+ {C}Function ReadInt16(const ValueName: String): Int16; overload; virtual;
+ {A}Function ReadUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt16; overload; virtual;
+ {B}Function ReadUInt16(const KeyName,ValueName: String): UInt16; overload; virtual;
+ {C}Function ReadUInt16(const ValueName: String): UInt16; overload; virtual;
+ {A}Function ReadInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int32; overload; virtual;
+ {B}Function ReadInt32(const KeyName,ValueName: String): Int32; overload; virtual;
+ {C}Function ReadInt32(const ValueName: String): Int32; overload; virtual;
+ {A}Function ReadUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt32; overload; virtual;
+ {B}Function ReadUInt32(const KeyName,ValueName: String): UInt32; overload; virtual;
+ {C}Function ReadUInt32(const ValueName: String): UInt32; overload; virtual;
+ {A}Function ReadInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int64; overload; virtual;
+ {B}Function ReadInt64(const KeyName,ValueName: String): Int64; overload; virtual;
+ {C}Function ReadInt64(const ValueName: String): Int64; overload; virtual;
+ {A}Function ReadUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt64; overload; virtual;
+ {B}Function ReadUInt64(const KeyName,ValueName: String): UInt64; overload; virtual;
+ {C}Function ReadUInt64(const ValueName: String): UInt64; overload; virtual;
+ {A}Function ReadInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Integer; overload; virtual;
+ {B}Function ReadInteger(const KeyName,ValueName: String): Integer; overload; virtual;
+ {C}Function ReadInteger(const ValueName: String): Integer; overload; virtual;
+ {A}Function ReadFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Float32; overload; virtual;
+ {B}Function ReadFloat32(const KeyName,ValueName: String): Float32; overload; virtual;
+ {C}Function ReadFloat32(const ValueName: String): Float32; overload; virtual;
+ {A}Function ReadFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Float64; overload; virtual;
+ {B}Function ReadFloat64(const KeyName,ValueName: String): Float64; overload; virtual;
+ {C}Function ReadFloat64(const ValueName: String): Float64; overload; virtual;
+ {A}Function ReadFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Double; overload; virtual;
+ {B}Function ReadFloat(const KeyName,ValueName: String): Double; overload; virtual;
+ {C}Function ReadFloat(const ValueName: String): Double; overload; virtual;
+ {A}Function ReadCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Currency; overload; virtual;
+ {B}Function ReadCurrency(const KeyName,ValueName: String): Currency; overload; virtual;
+ {C}Function ReadCurrency(const ValueName: String): Currency; overload; virtual;
+ {A}Function ReadDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime; overload; virtual;
+ {B}Function ReadDateTime(const KeyName,ValueName: String): TDateTime; overload; virtual;
+ {C}Function ReadDateTime(const ValueName: String): TDateTime; overload; virtual;
+ {A}Function ReadDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime; overload; virtual;
+ {B}Function ReadDate(const KeyName,ValueName: String): TDateTime; overload; virtual;
+ {C}Function ReadDate(const ValueName: String): TDateTime; overload; virtual;
+ {A}Function ReadTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime; overload; virtual;
+ {B}Function ReadTime(const KeyName,ValueName: String): TDateTime; overload; virtual;
+ {C}Function ReadTime(const ValueName: String): TDateTime; overload; virtual;
+ {A}Function ReadString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): String; overload; virtual;
+ {B}Function ReadString(const KeyName,ValueName: String): String; overload; virtual;
+ {C}Function ReadString(const ValueName: String): String; overload; virtual;
+ {A}Function ReadExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Expand: Boolean = False): String; overload; virtual;
+ {B}Function ReadExpandString(const KeyName,ValueName: String; Expand: Boolean = False): String; overload; virtual;
+ {C}Function ReadExpandString(const ValueName: String; Expand: Boolean = False): String; overload; virtual;
+ {A}procedure ReadMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings); overload; virtual;
+ {B}procedure ReadMultiString(const KeyName,ValueName: String; Value: TStrings); overload; virtual;
+ {C}procedure ReadMultiString(const ValueName: String; Value: TStrings); overload; virtual;
   {
     ReadBinaryBuffer and ReadBinaryMemory are returning number of bytes actally
     stored in the provided buffer/memory.
   }
-    Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; overload; virtual;
-    Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; overload; virtual;
+ {A}Function ReadBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Buff; Size: TMemSize): TMemSize; overload; virtual;
+ {B}Function ReadBinaryBuffer(const KeyName,ValueName: String; out Buff; Size: TMemSize): TMemSize; overload; virtual;
+ {C}Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; overload; virtual;
+ {A}Function ReadBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; overload; virtual;
+ {B}Function ReadBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; overload; virtual;
+ {C}Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; overload; virtual;
   {
     ReadBinaryMemoryOut returns internally alocated memory space that is
     containing the read data along with its size. Use standard memory
     management functions to free this space.
   }
-    Function ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize; overload; virtual;
-    procedure ReadBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
-    //--- properties --- 
+ {A}Function ReadBinaryMemoryOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Memory: Pointer): TMemSize; overload; virtual;
+ {B}Function ReadBinaryMemoryOut(const KeyName,ValueName: String; out Memory: Pointer): TMemSize; overload; virtual;
+ {C}Function ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize; overload; virtual;
+ {A}procedure ReadBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream); overload; virtual;
+ {B}procedure ReadBinaryStream(const KeyName,ValueName: String; Stream: TStream); overload; virtual;
+ {C}procedure ReadBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
+    //--- properties ---
   {
     Following access rights will be used in next call to OpenKey.
   }
@@ -839,6 +877,11 @@ implementation
 uses
   {$IFNDEF CPU64bit}WindowsVersion,{$ENDIF} StrRect, DynLibUtils;
 
+{$IFDEF FPC_DisableWarns}
+  {$DEFINE FPCDWM}
+  {$DEFINE W5057:={$WARN 5057 OFF}} // Local variable "$1" does not seem to be initialized
+{$ENDIF}
+
 {===============================================================================
 --------------------------------------------------------------------------------
                                    TRegistryEx
@@ -847,18 +890,10 @@ uses
 {===============================================================================
     TRegistryEx - external/system functions and constants
 ===============================================================================}
-{$IF not Declared(UNICODE_STRING_MAX_CHARS)}
 const
   UNICODE_STRING_MAX_CHARS = 32767;
-{$IFEND}
-{$IF not Declared(_DELETE)}
-const
-  _DELETE = $00010000;
-{$IFEND}
-{$IF not Declared(READ_CONTROL)}
-const
-  READ_CONTROL = $00020000;
-{$IFEND}
+  _DELETE                  = $00010000;
+  READ_CONTROL             = $00020000;
 
 type
   LONG    = LongInt;
@@ -896,6 +931,7 @@ var
     TRegistryEx - internal functions
 ===============================================================================}
 
+{$IFDEF FPCDWM}{$PUSH}W5057{$ENDIF}
 Function FileTimeToDateTime(FileTime: TFileTime): TDateTime;
 var
   LocalTime:  TFileTime;
@@ -910,6 +946,7 @@ If FileTimeToLocalFileTime(FileTime,LocalTime) then
   end
 else raise ERXTimeConversionError.CreateFmt('FileTimeToDateTime: Unable to convert to local file time (%d).',[GetLastError]);
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -1361,6 +1398,7 @@ end;
 
 Function TRegistryEx.AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
 begin
+NewKey := 0;
 fAuxOpenResult := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey);
 Result := fAuxOpenResult = ERROR_SUCCESS;
 end;
@@ -1909,6 +1947,7 @@ fRootKey := RootKey;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
 fFlushOnClose := False;
+fAuxOpenResult := ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -2023,6 +2062,7 @@ var
   TempKey:      HKEY;
   Disposition:  DWORD;
 begin
+TempKey := 0;
 If CanCreate then
   begin
     Result := RegCreateKeyExW(TranslatePredefinedKey(RootKey),
@@ -2059,6 +2099,7 @@ var
   WorkingKeyName: String;
   Disposition:    DWORD;
 begin
+TempKey := 0;
 If CanCreate then
   begin
     Result := RegCreateKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
@@ -2108,6 +2149,7 @@ var
   AccessRightsTemp: DWORD;
   TempKey:          HKEY;
 begin
+TempKey := 0;
 // preserve karWoW64_32Key and karWoW64_64Key from current access rights
 AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
 Result := RegOpenKeyExW(TranslatePredefinedKey(RootKey),
@@ -2130,6 +2172,7 @@ var
   TempKey:          HKEY;
   WorkingKeyName:   String;
 begin
+TempKey := 0;
 AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
 Result := RegOpenKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
                         PWideChar(StrToWide(TrimKeyName(KeyName))),
@@ -2177,6 +2220,7 @@ Function TRegistryEx.CreateKey(RootKey: TRXPredefinedKey; const KeyName: String;
 var
   TempKey:  HKEY;
 begin
+TempKey := 0;
 If RegCreateKeyExW(TranslatePredefinedKey(RootKey),
                    PWideChar(StrToWide(TrimKeyName(KeyName))),0,nil,
                    TranslateCreateOptions(CreateOptions),
@@ -2194,6 +2238,7 @@ Function TRegistryEx.CreateKey(const KeyName: String; AccessRights: TRXKeyAccess
 var
   TempKey:  HKEY;
 begin
+TempKey := 0;
 If RegCreateKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName)),
                    PWideChar(StrToWide(TrimKeyName(KeyName))),0,nil,
                    TranslateCreateOptions(CreateOptions),
@@ -4386,196 +4431,584 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean;
+begin
+If not TryReadBool(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadBool(const KeyName,ValueName: String): Boolean;
+begin
+If not TryReadBool(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadBool(const ValueName: String): Boolean;
 begin
 If not TryReadBool(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int8;
+begin
+If not TryReadInt8(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt8(const KeyName,ValueName: String): Int8;
+begin
+If not TryReadInt8(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt8(const ValueName: String): Int8;
 begin
 If not TryReadInt8(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt8;
+begin
+If not TryReadUInt8(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt8: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt8(const KeyName,ValueName: String): UInt8;
+begin
+If not TryReadUInt8(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt8: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt8(const ValueName: String): UInt8;
 begin
 If not TryReadUInt8(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt8: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int16;
+begin
+If not TryReadInt16(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt16(const KeyName,ValueName: String): Int16;
+begin
+If not TryReadInt16(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt16(const ValueName: String): Int16;
 begin
 If not TryReadInt16(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt16;
+begin
+If not TryReadUInt16(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt16(const KeyName,ValueName: String): UInt16;
+begin
+If not TryReadUInt16(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt16(const ValueName: String): UInt16;
 begin
 If not TryReadUInt16(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int32;
+begin
+If not TryReadInt32(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt32(const KeyName,ValueName: String): Int32;
+begin
+If not TryReadInt32(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt32(const ValueName: String): Int32;
 begin
 If not TryReadInt32(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt32;
+begin
+If not TryReadUInt32(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt32(const KeyName,ValueName: String): UInt32;
+begin
+If not TryReadUInt32(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt32(const ValueName: String): UInt32;
 begin
 If not TryReadUInt32(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int64;
+begin
+If not TryReadInt64(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt64(const KeyName,ValueName: String): Int64;
+begin
+If not TryReadInt64(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt64(const ValueName: String): Int64;
 begin
 If not TryReadInt64(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt64;
+begin
+If not TryReadUInt64(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt64(const KeyName,ValueName: String): UInt64;
+begin
+If not TryReadUInt64(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt64(const ValueName: String): UInt64;
 begin
 If not TryReadUInt64(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Integer;
+begin
+If not TryReadInteger(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInteger(const KeyName,ValueName: String): Integer;
+begin
+If not TryReadInteger(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInteger(const ValueName: String): Integer;
 begin
 If not TryReadInteger(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Float32;
+begin
+If not TryReadFloat32(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadFloat32(const KeyName,ValueName: String): Float32;
+begin
+If not TryReadFloat32(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat32(const ValueName: String): Float32;
 begin
 If not TryReadFloat32(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Float64;
+begin
+If not TryReadFloat64(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadFloat64(const KeyName,ValueName: String): Float64;
+begin
+If not TryReadFloat64(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat64(const ValueName: String): Float64;
 begin
 If not TryReadFloat64(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Double;
+begin
+If not TryReadFloat(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadFloat(const KeyName,ValueName: String): Double;
+begin
+If not TryReadFloat(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat(const ValueName: String): Double;
 begin
 If not TryReadFloat(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Currency;
+begin
+If not TryReadCurrency(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadCurrency(const KeyName,ValueName: String): Currency;
+begin
+If not TryReadCurrency(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadCurrency(const ValueName: String): Currency;
 begin
 If not TryReadCurrency(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime;
+begin
+If not TryReadDateTime(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadDateTime(const KeyName,ValueName: String): TDateTime;
+begin
+If not TryReadDateTime(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDateTime(const ValueName: String): TDateTime;
 begin
 If not TryReadDateTime(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime;
+begin
+If not TryReadDate(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadDate(const KeyName,ValueName: String): TDateTime;
+begin
+If not TryReadDate(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDate(const ValueName: String): TDateTime;
 begin
 If not TryReadDate(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime;
+begin
+If not TryReadTime(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadTime(const KeyName,ValueName: String): TDateTime;
+begin
+If not TryReadTime(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadTime(const ValueName: String): TDateTime;
 begin
 If not TryReadTime(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): String;
+begin
+If not TryReadString(RootKey,KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadString(const KeyName,ValueName: String): String;
+begin
+If not TryReadString(KeyName,ValueName,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadString(const ValueName: String): String;
 begin
 If not TryReadString(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Expand: Boolean = False): String;
+begin
+If not TryReadExpandString(RootKey,KeyName,ValueName,Result,Expand) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadExpandString(const KeyName,ValueName: String; Expand: Boolean = False): String;
+begin
+If not TryReadExpandString(KeyName,ValueName,Result,Expand) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadExpandString(const ValueName: String; Expand: Boolean = False): String;
 begin
 If not TryReadExpandString(ValueName,Result,Expand) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+procedure TRegistryEx.ReadMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings);
+begin
+If not TryReadMultiString(RootKey,KeyName,ValueName,Value) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMultiString(const KeyName,ValueName: String; Value: TStrings);
+begin
+If not TryReadMultiString(KeyName,ValueName,Value) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.ReadMultiString(const ValueName: String; Value: TStrings);
 begin
 If not TryReadMultiString(ValueName,Value) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Buff; Size: TMemSize): TMemSize;
+begin
+Result := Size;
+If not TryReadBinaryBuffer(RootKey,KeyName,ValueName,Buff,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadBinaryBuffer(const KeyName,ValueName: String; out Buff; Size: TMemSize): TMemSize;
+begin
+Result := Size;
+If not TryReadBinaryBuffer(KeyName,ValueName,Buff,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize;
 begin
 Result := Size;
 If not TryReadBinaryBuffer(ValueName,Buff,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
+begin
+Result := Size;
+If not TryReadBinaryMemory(RootKey,KeyName,ValueName,Memory,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
+begin
+Result := Size;
+If not TryReadBinaryMemory(KeyName,ValueName,Memory,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
 begin
 Result := Size;
 If not TryReadBinaryMemory(ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBinaryMemoryOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Memory: Pointer): TMemSize;
+begin
+If not TryReadBinaryMemoryOut(RootKey,KeyName,ValueName,Memory,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadBinaryMemoryOut(const KeyName,ValueName: String; out Memory: Pointer): TMemSize;
+begin
+If not TryReadBinaryMemoryOut(KeyName,ValueName,Memory,Result) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize;
 begin
 If not TryReadBinaryMemoryOut(ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
 end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.ReadBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream);
+begin
+If not TryReadBinaryStream(RootKey,KeyName,ValueName,Stream) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadBinaryStream(const KeyName,ValueName: String; Stream: TStream);
+begin
+If not TryReadBinaryStream(KeyName,ValueName,Stream) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value "%s".',[ValueName]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.ReadBinaryStream(const ValueName: String; Stream: TStream);
 begin
 If not TryReadBinaryStream(ValueName,Stream) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value %s.',[ValueName]);
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value "%s".',[ValueName]);
 end;
 
 (*
