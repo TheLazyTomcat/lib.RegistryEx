@@ -14,6 +14,8 @@ unit RegistryEx;
 
 {$IFDEF FPC}
   {$MODE ObjFPC}
+  {$MODESWITCH DuplicateLocals+}
+  {$MODESWITCH PointerToProcVar+}
   //{$INLINE ON}
   //{$DEFINE CanInline}
   //{$DEFINE FPC_DisableWarns}
@@ -43,11 +45,9 @@ type
 
   ERXTimeConversionError = class(ERXException);
   ERXInvalidValue        = class(ERXException);
-
-  ERXRegistryWriteError = class(ERXException);
-  ERXRegistryReadError  = class(ERXException);
-
-//ERXInvalidKey          = class(ERXException);
+  ERXInvalidKey          = class(ERXException);
+  ERXRegistryWriteError  = class(ERXException);
+  ERXRegistryReadError   = class(ERXException);
 
 {===============================================================================
     System constants
@@ -329,7 +329,7 @@ type
     procedure GetValues(Key: HKEY; Values: TStrings); overload; virtual;
     procedure DeleteSubKeys(Key: HKEY); overload; virtual;
     procedure DeleteValues(Key: HKEY); overload; virtual;
-    //--- data access methods ---
+    //--- data access methods and macros ---
     procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure SetValueData(Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
     procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
@@ -341,12 +341,22 @@ type
     Function GetValueDataExtBuff(Key: HKEY; const ValueName: String; out Data; var Size: TMemSize; ValueType: TRXValueType): Boolean; virtual;
     Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data: Integer): Boolean; overload; virtual;
+    Function TryReadMacroOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacroOut(const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacroOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacroOut(const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacroExtBuff(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacroExtBuff(const KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacro(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacro(const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function TryReadMacro(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Success: Boolean): Integer; overload; virtual;
+    Function TryReadMacro(const KeyName,ValueName: String; out Success: Boolean): Integer; overload; virtual;
     //--- init/final methods ---
     procedure Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights); virtual;
     procedure Finalize; virtual;
   public
   {
-    If funtions RegistryQuota* fails to obtain the number, they will return 0.
+    If functions RegistryQuota* fail to obtain the number, they will return 0.
   }
     class Function RegistryQuotaAllowed: UInt32; virtual;
     class Function RegistryQuotaUsed: UInt32; virtual;
@@ -377,7 +387,6 @@ type
         If current key is open, then these functions operate on the current
         key and its values, otherwise they operate on predefined key stored in
         property RootKey.
-        All write and read operations fall into this category.
 
       D - no common parameter
 
@@ -405,7 +414,8 @@ type
     karRead, but it will also preserve karWoW64_32Key and karWoW64_64Key if
     they were previously set.
   }
- {B}Function OpenKeyReadOnly(const KeyName: String): Boolean; virtual;
+ {A}Function OpenKeyReadOnly(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
+ {B}Function OpenKeyReadOnly(const KeyName: String): Boolean; overload; virtual;
   {
     KeyExists tries to open given key for reading. When it succeeds, it is
     assumed the key exists, otherwise it is assumed it does not exist.
@@ -518,130 +528,148 @@ type
     ////RegRestoreKey
     ////UnLoadKey
 
-    //--- key values write ---
+    //--- values write ---
   {
     When writing to other key than current or predefined, the key must already
-    exists, otherwise an ERXRegistryWriteError exception is raised.
+    exist, otherwise an ERXInvalidKey exception is raised.
   }
-    procedure WriteBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Boolean); overload; virtual;
-    procedure WriteBool(const KeyName,ValueName: String; Value: Boolean); overload; virtual;
-    procedure WriteBool(const ValueName: String; Value: Boolean); overload; virtual;
-
-    procedure WriteInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int8); overload; virtual;
-    procedure WriteInt8(const KeyName,ValueName: String; Value: Int8); overload; virtual;
-    procedure WriteInt8(const ValueName: String; Value: Int8); overload; virtual;
-
-    procedure WriteUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt8); overload; virtual;
-    procedure WriteUInt8(const KeyName,ValueName: String; Value: UInt8); overload; virtual;
-    procedure WriteUInt8(const ValueName: String; Value: UInt8); overload; virtual;
-
-    procedure WriteInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int16); overload; virtual;
-    procedure WriteInt16(const KeyName,ValueName: String; Value: Int16); overload; virtual;
-    procedure WriteInt16(const ValueName: String; Value: Int16); overload; virtual;
-
-    procedure WriteUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt16); overload; virtual;
-    procedure WriteUInt16(const KeyName,ValueName: String; Value: UInt16); overload; virtual;
-    procedure WriteUInt16(const ValueName: String; Value: UInt16); overload; virtual;
-
-    procedure WriteInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int32); overload; virtual;
-    procedure WriteInt32(const KeyName,ValueName: String; Value: Int32); overload; virtual;
-    procedure WriteInt32(const ValueName: String; Value: Int32); overload; virtual;
-
-    procedure WriteUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt32); overload; virtual;
-    procedure WriteUInt32(const KeyName,ValueName: String; Value: UInt32); overload; virtual;
-    procedure WriteUInt32(const ValueName: String; Value: UInt32); overload; virtual;
-
-    procedure WriteInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int64); overload; virtual;
-    procedure WriteInt64(const KeyName,ValueName: String; Value: Int64); overload; virtual;
-    procedure WriteInt64(const ValueName: String; Value: Int64); overload; virtual;
-
-    procedure WriteUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt64); overload; virtual;
-    procedure WriteUInt64(const KeyName,ValueName: String; Value: UInt64); overload; virtual;
-    procedure WriteUInt64(const ValueName: String; Value: UInt64); overload; virtual;
-
-    procedure WriteInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer); overload; virtual;
-    procedure WriteInteger(const KeyName,ValueName: String; Value: Integer); overload; virtual;
-    procedure WriteInteger(const ValueName: String; Value: Integer); overload; virtual;
-
-    procedure WriteFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float32); overload; virtual;
-    procedure WriteFloat32(const KeyName,ValueName: String; Value: Float32); overload; virtual;
-    procedure WriteFloat32(const ValueName: String; Value: Float32); overload; virtual;
-
-    procedure WriteFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float64); overload; virtual;
-    procedure WriteFloat64(const KeyName,ValueName: String; Value: Float64); overload; virtual;
-    procedure WriteFloat64(const ValueName: String; Value: Float64); overload; virtual;
-
-    procedure WriteFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Double); overload; virtual;
-    procedure WriteFloat(const KeyName,ValueName: String; Value: Double); overload; virtual;
-    procedure WriteFloat(const ValueName: String; Value: Double); overload; virtual;
-
-    procedure WriteCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Currency); overload; virtual;
-    procedure WriteCurrency(const KeyName,ValueName: String; Value: Currency); overload; virtual;
-    procedure WriteCurrency(const ValueName: String; Value: Currency); overload; virtual;
-
-    procedure WriteDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
-    procedure WriteDateTime(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
-    procedure WriteDateTime(const ValueName: String; Value: TDateTime); overload; virtual;
-
-    procedure WriteDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
-    procedure WriteDate(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
-    procedure WriteDate(const ValueName: String; Value: TDateTime); overload; virtual;
-
-    procedure WriteTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
-    procedure WriteTime(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
-    procedure WriteTime(const ValueName: String; Value: TDateTime); overload; virtual;
-
-    procedure WriteString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String); overload; virtual;
-    procedure WriteString(const KeyName,ValueName: String; const Value: String); overload; virtual;
-    procedure WriteString(const ValueName: String; const Value: String); overload; virtual;
-
-    procedure WriteExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
-    procedure WriteExpandString(const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
-    procedure WriteExpandString(const ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
-
-    procedure WriteMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings); overload; virtual;
-    procedure WriteMultiString(const KeyName,ValueName: String; Value: TStrings); overload; virtual;
-    procedure WriteMultiString(const ValueName: String; Value: TStrings); overload; virtual;
-
-    procedure WriteBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Buff; Size: TMemSize); overload; virtual;
-    procedure WriteBinaryBuffer(const KeyName,ValueName: String; const Buff; Size: TMemSize); overload; virtual;
-    procedure WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize); overload; virtual;
-
-    procedure WriteBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
-    procedure WriteBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
-    procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
+ {A}procedure WriteBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Boolean); overload; virtual;
+ {B}procedure WriteBool(const KeyName,ValueName: String; Value: Boolean); overload; virtual;
+ {C}procedure WriteBool(const ValueName: String; Value: Boolean); overload; virtual;
+ {A}procedure WriteInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int8); overload; virtual;
+ {B}procedure WriteInt8(const KeyName,ValueName: String; Value: Int8); overload; virtual;
+ {C}procedure WriteInt8(const ValueName: String; Value: Int8); overload; virtual;
+ {A}procedure WriteUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt8); overload; virtual;
+ {B}procedure WriteUInt8(const KeyName,ValueName: String; Value: UInt8); overload; virtual;
+ {C}procedure WriteUInt8(const ValueName: String; Value: UInt8); overload; virtual;
+ {A}procedure WriteInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int16); overload; virtual;
+ {B}procedure WriteInt16(const KeyName,ValueName: String; Value: Int16); overload; virtual;
+ {C}procedure WriteInt16(const ValueName: String; Value: Int16); overload; virtual;
+ {A}procedure WriteUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt16); overload; virtual;
+ {B}procedure WriteUInt16(const KeyName,ValueName: String; Value: UInt16); overload; virtual;
+ {C}procedure WriteUInt16(const ValueName: String; Value: UInt16); overload; virtual;
+ {A}procedure WriteInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int32); overload; virtual;
+ {B}procedure WriteInt32(const KeyName,ValueName: String; Value: Int32); overload; virtual;
+ {C}procedure WriteInt32(const ValueName: String; Value: Int32); overload; virtual;
+ {A}procedure WriteUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt32); overload; virtual;
+ {B}procedure WriteUInt32(const KeyName,ValueName: String; Value: UInt32); overload; virtual;
+ {C}procedure WriteUInt32(const ValueName: String; Value: UInt32); overload; virtual;
+ {A}procedure WriteInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Int64); overload; virtual;
+ {B}procedure WriteInt64(const KeyName,ValueName: String; Value: Int64); overload; virtual;
+ {C}procedure WriteInt64(const ValueName: String; Value: Int64); overload; virtual;
+ {A}procedure WriteUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: UInt64); overload; virtual;
+ {B}procedure WriteUInt64(const KeyName,ValueName: String; Value: UInt64); overload; virtual;
+ {C}procedure WriteUInt64(const ValueName: String; Value: UInt64); overload; virtual;
+ {A}procedure WriteInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer); overload; virtual;
+ {B}procedure WriteInteger(const KeyName,ValueName: String; Value: Integer); overload; virtual;
+ {C}procedure WriteInteger(const ValueName: String; Value: Integer); overload; virtual;
+ {A}procedure WriteFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float32); overload; virtual;
+ {B}procedure WriteFloat32(const KeyName,ValueName: String; Value: Float32); overload; virtual;
+ {C}procedure WriteFloat32(const ValueName: String; Value: Float32); overload; virtual;
+ {A}procedure WriteFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Float64); overload; virtual;
+ {B}procedure WriteFloat64(const KeyName,ValueName: String; Value: Float64); overload; virtual;
+ {C}procedure WriteFloat64(const ValueName: String; Value: Float64); overload; virtual;
+ {A}procedure WriteFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Double); overload; virtual;
+ {B}procedure WriteFloat(const KeyName,ValueName: String; Value: Double); overload; virtual;
+ {C}procedure WriteFloat(const ValueName: String; Value: Double); overload; virtual;
+ {A}procedure WriteCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Currency); overload; virtual;
+ {B}procedure WriteCurrency(const KeyName,ValueName: String; Value: Currency); overload; virtual;
+ {C}procedure WriteCurrency(const ValueName: String; Value: Currency); overload; virtual;
+ {A}procedure WriteDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+ {B}procedure WriteDateTime(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+ {C}procedure WriteDateTime(const ValueName: String; Value: TDateTime); overload; virtual;
+ {A}procedure WriteDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+ {B}procedure WriteDate(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+ {C}procedure WriteDate(const ValueName: String; Value: TDateTime); overload; virtual;
+ {A}procedure WriteTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+ {B}procedure WriteTime(const KeyName,ValueName: String; Value: TDateTime); overload; virtual;
+ {C}procedure WriteTime(const ValueName: String; Value: TDateTime); overload; virtual;
+ {A}procedure WriteString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String); overload; virtual;
+ {B}procedure WriteString(const KeyName,ValueName: String; const Value: String); overload; virtual;
+ {C}procedure WriteString(const ValueName: String; const Value: String); overload; virtual;
+ {A}procedure WriteExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
+ {B}procedure WriteExpandString(const KeyName,ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
+ {C}procedure WriteExpandString(const ValueName: String; const Value: String; UnExpand: Boolean = False); overload; virtual;
+ {A}procedure WriteMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings); overload; virtual;
+ {B}procedure WriteMultiString(const KeyName,ValueName: String; Value: TStrings); overload; virtual;
+ {C}procedure WriteMultiString(const ValueName: String; Value: TStrings); overload; virtual;
+ {A}procedure WriteBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Buff; Size: TMemSize); overload; virtual;
+ {B}procedure WriteBinaryBuffer(const KeyName,ValueName: String; const Buff; Size: TMemSize); overload; virtual;
+ {C}procedure WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize); overload; virtual;
+ {A}procedure WriteBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
+ {B}procedure WriteBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
+ {C}procedure WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize); overload; virtual;
   {
     Position of the passed stream is undefined after the call, do not assume
     anything about its value.
   }
-    procedure WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
-    procedure WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
-    procedure WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
-
-    procedure WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream); overload; virtual;
-    procedure WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream); overload; virtual;
-    procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
-    //--- key values try-read ---
-    Function TryReadBool(const ValueName: String; out Value: Boolean): Boolean; virtual;
-    Function TryReadInt8(const ValueName: String; out Value: Int8): Boolean; virtual;
-    Function TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean; virtual;
-    Function TryReadInt16(const ValueName: String; out Value: Int16): Boolean; virtual;
-    Function TryReadUInt16(const ValueName: String; out Value: UInt16): Boolean; virtual;
-    Function TryReadInt32(const ValueName: String; out Value: Int32): Boolean; virtual;
-    Function TryReadUInt32(const ValueName: String; out Value: UInt32): Boolean; virtual;
-    Function TryReadInt64(const ValueName: String; out Value: Int64): Boolean; virtual;
-    Function TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean; virtual;
-    Function TryReadInteger(const ValueName: String; out Value: Integer): Boolean; virtual;
-    Function TryReadFloat32(const ValueName: String; out Value: Float32): Boolean; virtual;
-    Function TryReadFloat64(const ValueName: String; out Value: Float64): Boolean; virtual;
-    Function TryReadFloat(const ValueName: String; out Value: Double): Boolean; virtual;
-    Function TryReadCurrency(const ValueName: String; out Value: Currency): Boolean; virtual;
-    Function TryReadDateTime(const ValueName: String; out Value: TDateTime): Boolean; virtual;
-    Function TryReadDate(const ValueName: String; out Value: TDateTime): Boolean; virtual;
-    Function TryReadTime(const ValueName: String; out Value: TDateTime): Boolean; virtual;
-    Function TryReadString(const ValueName: String; out Value: String): Boolean; virtual;
-    Function TryReadExpandString(const ValueName: String; out Value: String; Expand: Boolean = False): Boolean; virtual;
-    Function TryReadMultiString(const ValueName: String; Value: TStrings): Boolean; virtual;
+ {A}procedure WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
+ {B}procedure WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
+ {C}procedure WriteBinaryStream(const ValueName: String; Stream: TStream; Position, Count: Int64); overload; virtual;
+ {A}procedure WriteBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream); overload; virtual;
+ {B}procedure WriteBinaryStream(const KeyName,ValueName: String; Stream: TStream); overload; virtual;
+ {C}procedure WriteBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
+    //--- values try-read ---
+ {A}Function TryReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Boolean): Boolean; overload; virtual;
+ {B}Function TryReadBool(const KeyName,ValueName: String; out Value: Boolean): Boolean; overload; virtual;
+ {C}Function TryReadBool(const ValueName: String; out Value: Boolean): Boolean; overload; virtual;
+ {A}Function TryReadInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int8): Boolean; overload; virtual;
+ {B}Function TryReadInt8(const KeyName,ValueName: String; out Value: Int8): Boolean; overload; virtual;
+ {C}Function TryReadInt8(const ValueName: String; out Value: Int8): Boolean; overload; virtual;
+ {A}Function TryReadUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt8): Boolean; overload; virtual;
+ {B}Function TryReadUInt8(const KeyName,ValueName: String; out Value: UInt8): Boolean; overload; virtual;
+ {C}Function TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean; overload; virtual;
+ {A}Function TryReadInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int16): Boolean; overload; virtual;
+ {B}Function TryReadInt16(const KeyName,ValueName: String; out Value: Int16): Boolean; overload; virtual;
+ {C}Function TryReadInt16(const ValueName: String; out Value: Int16): Boolean; overload; virtual;
+ {A}Function TryReadUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt16): Boolean; overload; virtual;
+ {B}Function TryReadUInt16(const KeyName,ValueName: String; out Value: UInt16): Boolean; overload; virtual;
+ {C}Function TryReadUInt16(const ValueName: String; out Value: UInt16): Boolean; overload; virtual;
+ {A}Function TryReadInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int32): Boolean; overload; virtual;
+ {B}Function TryReadInt32(const KeyName,ValueName: String; out Value: Int32): Boolean; overload; virtual;
+ {C}Function TryReadInt32(const ValueName: String; out Value: Int32): Boolean; overload; virtual;
+ {A}Function TryReadUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt32): Boolean; overload; virtual;
+ {B}Function TryReadUInt32(const KeyName,ValueName: String; out Value: UInt32): Boolean; overload; virtual;
+ {C}Function TryReadUInt32(const ValueName: String; out Value: UInt32): Boolean; overload; virtual;
+ {A}Function TryReadInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int64): Boolean; overload; virtual;
+ {B}Function TryReadInt64(const KeyName,ValueName: String; out Value: Int64): Boolean; overload; virtual;
+ {C}Function TryReadInt64(const ValueName: String; out Value: Int64): Boolean; overload; virtual;
+ {A}Function TryReadUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt64): Boolean; overload; virtual;
+ {B}Function TryReadUInt64(const KeyName,ValueName: String; out Value: UInt64): Boolean; overload; virtual;
+ {C}Function TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean; overload; virtual;
+ {A}Function TryReadInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Integer): Boolean; overload; virtual;
+ {B}Function TryReadInteger(const KeyName,ValueName: String; out Value: Integer): Boolean; overload; virtual;
+ {C}Function TryReadInteger(const ValueName: String; out Value: Integer): Boolean; overload; virtual;
+ {A}Function TryReadFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Float32): Boolean; overload; virtual;
+ {B}Function TryReadFloat32(const KeyName,ValueName: String; out Value: Float32): Boolean; overload; virtual;
+ {C}Function TryReadFloat32(const ValueName: String; out Value: Float32): Boolean; overload; virtual;
+ {A}Function TryReadFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Float64): Boolean; overload; virtual;
+ {B}Function TryReadFloat64(const KeyName,ValueName: String; out Value: Float64): Boolean; overload; virtual;
+ {C}Function TryReadFloat64(const ValueName: String; out Value: Float64): Boolean; overload; virtual;
+ {A}Function TryReadFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Double): Boolean; overload; virtual;
+ {B}Function TryReadFloat(const KeyName,ValueName: String; out Value: Double): Boolean; overload; virtual;
+ {C}Function TryReadFloat(const ValueName: String; out Value: Double): Boolean; overload; virtual;
+ {A}Function TryReadCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Currency): Boolean; overload; virtual;
+ {B}Function TryReadCurrency(const KeyName,ValueName: String; out Value: Currency): Boolean; overload; virtual;
+ {C}Function TryReadCurrency(const ValueName: String; out Value: Currency): Boolean; overload; virtual;
+ {A}Function TryReadDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {B}Function TryReadDateTime(const KeyName,ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {C}Function TryReadDateTime(const ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {A}Function TryReadDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {B}Function TryReadDate(const KeyName,ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {C}Function TryReadDate(const ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {A}Function TryReadTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {B}Function TryReadTime(const KeyName,ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {C}Function TryReadTime(const ValueName: String; out Value: TDateTime): Boolean; overload; virtual;
+ {A}Function TryReadString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: String): Boolean; overload; virtual;
+ {B}Function TryReadString(const KeyName,ValueName: String; out Value: String): Boolean; overload; virtual;
+ {C}Function TryReadString(const ValueName: String; out Value: String): Boolean; overload; virtual;
+ {A}Function TryReadExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: String; Expand: Boolean = False): Boolean; overload; virtual;
+ {B}Function TryReadExpandString(const KeyName,ValueName: String; out Value: String; Expand: Boolean = False): Boolean; overload; virtual;
+ {C}Function TryReadExpandString(const ValueName: String; out Value: String; Expand: Boolean = False): Boolean; overload; virtual;
+ {A}Function TryReadMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings): Boolean; overload; virtual;
+ {B}Function TryReadMultiString(const KeyName,ValueName: String; Value: TStrings): Boolean; overload; virtual;
+ {C}Function TryReadMultiString(const ValueName: String; Value: TStrings): Boolean; overload; virtual;
   {
     Size must, on enter, contain size of the preallocated output buffer.
     In case of success, it will contain true amount of data stored into the
@@ -651,11 +679,15 @@ type
     To obtain size of buffer that is required to store the data, use method
     GetValueDataSize.
   }
-    Function TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean; virtual;
+ {A}Function TryReadBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Buff; var Size: TMemSize): Boolean; overload; virtual;
+ {B}Function TryReadBinaryBuffer(const KeyName,ValueName: String; out Buff; var Size: TMemSize): Boolean; overload; virtual;
+ {C}Function TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean; overload; virtual;
   {
     TryReadBinaryMemory behaves the same as TryReadBinaryBuffer.
   }
-    Function TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean; virtual;
+ {A}Function TryReadBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean; overload; virtual;
+ {B}Function TryReadBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean; overload; virtual;
+ {C}Function TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean; overload; virtual;
   {
     This funtion does not need preallocated buffer. Instead, it itself
     allocates memory space that is necessary to store the data and, when it
@@ -669,62 +701,107 @@ type
     This function is intended for situations where amount of stored data can
     rapidly change (eg. values in HKEY_PERFORMANCE_DATA).
   }
-    Function TryReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean; virtual;
-    Function TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean; virtual;
-    //--- key values read-def ---
-    Function ReadBoolDef(const ValueName: String; Default: Boolean): Boolean; virtual;
-    Function ReadInt8Def(const ValueName: String; Default: Int8): Int8; virtual;
-    Function ReadUInt8Def(const ValueName: String; Default: UInt8): UInt8; virtual;
-    Function ReadInt16Def(const ValueName: String; Default: Int16): Int16; virtual;
-    Function ReadUInt16Def(const ValueName: String; Default: UInt16): UInt16; virtual;
-    Function ReadInt32Def(const ValueName: String; Default: Int32): Int32; virtual;
-    Function ReadUInt32Def(const ValueName: String; Default: UInt32): UInt32; virtual;
-    Function ReadInt64Def(const ValueName: String; Default: Int64): Int64; virtual;
-    Function ReadUInt64Def(const ValueName: String; Default: UInt64): UInt64; virtual;
-    Function ReadIntegerDef(const ValueName: String; Default: Integer): Integer; virtual;
-    Function ReadFloat32Def(const ValueName: String; Default: Float32): Float32; virtual;
-    Function ReadFloat64Def(const ValueName: String; Default: Float64): Float64; virtual;
-    Function ReadFloatDef(const ValueName: String; Default: Double): Double; virtual;
-    Function ReadCurrencyDef(const ValueName: String; Default: Currency): Currency; virtual;
-    Function ReadDateTimeDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
-    Function ReadDateDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
-    Function ReadTimeDef(const ValueName: String; Default: TDateTime): TDateTime; virtual;
-    Function ReadStringDef(const ValueName: String; const Default: String): String; virtual;
-    Function ReadExpandStringDef(const ValueName: String; const Default: String): String; virtual;
-    //--- key values read ---
-    Function ReadBool(const ValueName: String): Boolean; virtual;
-    Function ReadInt8(const ValueName: String): Int8; virtual;
-    Function ReadUInt8(const ValueName: String): UInt8; virtual;
-    Function ReadInt16(const ValueName: String): Int16; virtual;
-    Function ReadUInt16(const ValueName: String): UInt16; virtual;
-    Function ReadInt32(const ValueName: String): Int32; virtual;
-    Function ReadUInt32(const ValueName: String): UInt32; virtual;
-    Function ReadInt64(const ValueName: String): Int64; virtual;
-    Function ReadUInt64(const ValueName: String): UInt64; virtual;
-    Function ReadInteger(const ValueName: String): Integer; virtual;
-    Function ReadFloat32(const ValueName: String): Float32; virtual;
-    Function ReadFloat64(const ValueName: String): Float64; virtual;
-    Function ReadFloat(const ValueName: String): Double; virtual;
-    Function ReadCurrency(const ValueName: String): Currency; virtual;
-    Function ReadDateTime(const ValueName: String): TDateTime; virtual;
-    Function ReadDate(const ValueName: String): TDateTime; virtual;
-    Function ReadTime(const ValueName: String): TDateTime; virtual;
-    Function ReadString(const ValueName: String): String; virtual;
-    Function ReadExpandString(const ValueName: String; Expand: Boolean = False): String; virtual;
-    procedure ReadMultiString(const ValueName: String; Value: TStrings); virtual;
+ {A}Function TryReadBinaryMemoryOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean; overload; virtual;
+ {B}Function TryReadBinaryMemoryOut(const KeyName,ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean; overload; virtual;
+ {C}Function TryReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean; overload; virtual;
+  {
+    Position of the stream is undefined after the call.
+  }
+ {A}Function TryReadBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream): Boolean; overload; virtual;
+ {B}Function TryReadBinaryStream(const KeyName,ValueName: String; Stream: TStream): Boolean; overload; virtual;
+ {C}Function TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean; overload; virtual;
+    //--- values read-def ---
+ {A}Function ReadBoolDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Boolean): Boolean; overload; virtual;
+ {B}Function ReadBoolDef(const KeyName,ValueName: String; Default: Boolean): Boolean; overload; virtual;
+ {C}Function ReadBoolDef(const ValueName: String; Default: Boolean): Boolean; overload; virtual;
+ {A}Function ReadInt8Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int8): Int8; overload; virtual;
+ {B}Function ReadInt8Def(const KeyName,ValueName: String; Default: Int8): Int8; overload; virtual;
+ {C}Function ReadInt8Def(const ValueName: String; Default: Int8): Int8; overload; virtual;
+ {A}Function ReadUInt8Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt8): UInt8; overload; virtual;
+ {B}Function ReadUInt8Def(const KeyName,ValueName: String; Default: UInt8): UInt8; overload; virtual;
+ {C}Function ReadUInt8Def(const ValueName: String; Default: UInt8): UInt8; overload; virtual;
+ {A}Function ReadInt16Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int16): Int16; overload; virtual;
+ {B}Function ReadInt16Def(const KeyName,ValueName: String; Default: Int16): Int16; overload; virtual;
+ {C}Function ReadInt16Def(const ValueName: String; Default: Int16): Int16; overload; virtual;
+ {A}Function ReadUInt16Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt16): UInt16; overload; virtual;
+ {B}Function ReadUInt16Def(const KeyName,ValueName: String; Default: UInt16): UInt16; overload; virtual;
+ {C}Function ReadUInt16Def(const ValueName: String; Default: UInt16): UInt16; overload; virtual;
+ {A}Function ReadInt32Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int32): Int32; overload; virtual;
+ {B}Function ReadInt32Def(const KeyName,ValueName: String; Default: Int32): Int32; overload; virtual;
+ {C}Function ReadInt32Def(const ValueName: String; Default: Int32): Int32; overload; virtual;
+ {A}Function ReadUInt32Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt32): UInt32; overload; virtual;
+ {B}Function ReadUInt32Def(const KeyName,ValueName: String; Default: UInt32): UInt32; overload; virtual;
+ {C}Function ReadUInt32Def(const ValueName: String; Default: UInt32): UInt32; overload; virtual;
+ {A}Function ReadInt64Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int64): Int64; overload; virtual;
+ {B}Function ReadInt64Def(const KeyName,ValueName: String; Default: Int64): Int64; overload; virtual;
+ {C}Function ReadInt64Def(const ValueName: String; Default: Int64): Int64; overload; virtual;
+ {A}Function ReadUInt64Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt64): UInt64; overload; virtual;
+ {B}Function ReadUInt64Def(const KeyName,ValueName: String; Default: UInt64): UInt64; overload; virtual;
+ {C}Function ReadUInt64Def(const ValueName: String; Default: UInt64): UInt64; overload; virtual;
+ {A}Function ReadIntegerDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Integer): Integer; overload; virtual;
+ {B}Function ReadIntegerDef(const KeyName,ValueName: String; Default: Integer): Integer; overload; virtual;
+ {C}Function ReadIntegerDef(const ValueName: String; Default: Integer): Integer; overload; virtual;
+ {A}Function ReadFloat32Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Float32): Float32; overload; virtual;
+ {B}Function ReadFloat32Def(const KeyName,ValueName: String; Default: Float32): Float32; overload; virtual;
+ {C}Function ReadFloat32Def(const ValueName: String; Default: Float32): Float32; overload; virtual;
+ {A}Function ReadFloat64Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Float64): Float64; overload; virtual;
+ {B}Function ReadFloat64Def(const KeyName,ValueName: String; Default: Float64): Float64; overload; virtual;
+ {C}Function ReadFloat64Def(const ValueName: String; Default: Float64): Float64; overload; virtual;
+ {A}Function ReadFloatDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Double): Double; overload; virtual;
+ {B}Function ReadFloatDef(const KeyName,ValueName: String; Default: Double): Double; overload; virtual;
+ {C}Function ReadFloatDef(const ValueName: String; Default: Double): Double; overload; virtual;
+ {A}Function ReadCurrencyDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Currency): Currency; overload; virtual;
+ {B}Function ReadCurrencyDef(const KeyName,ValueName: String; Default: Currency): Currency; overload; virtual;
+ {C}Function ReadCurrencyDef(const ValueName: String; Default: Currency): Currency; overload; virtual;
+ {A}Function ReadDateTimeDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {B}Function ReadDateTimeDef(const KeyName,ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {C}Function ReadDateTimeDef(const ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {A}Function ReadDateDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {B}Function ReadDateDef(const KeyName,ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {C}Function ReadDateDef(const ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {A}Function ReadTimeDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {B}Function ReadTimeDef(const KeyName,ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {C}Function ReadTimeDef(const ValueName: String; Default: TDateTime): TDateTime; overload; virtual;
+ {A}Function ReadStringDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Default: String): String; overload; virtual;
+ {B}Function ReadStringDef(const KeyName,ValueName: String; const Default: String): String; overload; virtual;
+ {C}Function ReadStringDef(const ValueName: String; const Default: String): String; overload; virtual;
+ {A}Function ReadExpandStringDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
+ {B}Function ReadExpandStringDef(const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
+ {C}Function ReadExpandStringDef(const ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
+    //--- values read ---
+    Function ReadBool(const ValueName: String): Boolean; overload; virtual;
+    Function ReadInt8(const ValueName: String): Int8; overload; virtual;
+    Function ReadUInt8(const ValueName: String): UInt8; overload; virtual;
+    Function ReadInt16(const ValueName: String): Int16; overload; virtual;
+    Function ReadUInt16(const ValueName: String): UInt16; overload; virtual;
+    Function ReadInt32(const ValueName: String): Int32; overload; virtual;
+    Function ReadUInt32(const ValueName: String): UInt32; overload; virtual;
+    Function ReadInt64(const ValueName: String): Int64; overload; virtual;
+    Function ReadUInt64(const ValueName: String): UInt64; overload; virtual;
+    Function ReadInteger(const ValueName: String): Integer; overload; virtual;
+    Function ReadFloat32(const ValueName: String): Float32; overload; virtual;
+    Function ReadFloat64(const ValueName: String): Float64; overload; virtual;
+    Function ReadFloat(const ValueName: String): Double; overload; virtual;
+    Function ReadCurrency(const ValueName: String): Currency; overload; virtual;
+    Function ReadDateTime(const ValueName: String): TDateTime; overload; virtual;
+    Function ReadDate(const ValueName: String): TDateTime; overload; virtual;
+    Function ReadTime(const ValueName: String): TDateTime; overload; virtual;
+    Function ReadString(const ValueName: String): String; overload; virtual;
+    Function ReadExpandString(const ValueName: String; Expand: Boolean = False): String; overload; virtual;
+    procedure ReadMultiString(const ValueName: String; Value: TStrings); overload; virtual;
   {
     ReadBinaryBuffer and ReadBinaryMemory are returning number of bytes actally
     stored in the provided buffer/memory.
   }
-    Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; virtual;
-    Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; virtual;
+    Function ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize; overload; virtual;
+    Function ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize; overload; virtual;
   {
     ReadBinaryMemoryOut returns internally alocated memory space that is
     containing the read data along with its size. Use standard memory
     management functions to free this space.
   }
-    Function ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize; virtual;
-    procedure ReadBinaryStream(const ValueName: String; Stream: TStream); virtual;
+    Function ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize; overload; virtual;
+    procedure ReadBinaryStream(const ValueName: String; Stream: TStream); overload; virtual;
     //--- properties --- 
   {
     Following access rights will be used in next call to OpenKey.
@@ -768,11 +845,19 @@ uses
 --------------------------------------------------------------------------------
 ===============================================================================}
 {===============================================================================
-    TRegistryEx - external (system) functions
+    TRegistryEx - external/system functions and constants
 ===============================================================================}
 {$IF not Declared(UNICODE_STRING_MAX_CHARS)}
 const
   UNICODE_STRING_MAX_CHARS = 32767;
+{$IFEND}
+{$IF not Declared(_DELETE)}
+const
+  _DELETE = $00010000;
+{$IFEND}
+{$IF not Declared(READ_CONTROL)}
+const
+  READ_CONTROL = $00020000;
 {$IFEND}
 
 type
@@ -838,6 +923,17 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function ExpandString(const Str: WideString): String;
+var
+  Temp: WideString;
+begin
+SetLength(Temp,ExpandEnvironmentStringsW(PWideChar(Str),nil,0));
+ExpandEnvironmentStringsW(PWideChar(Str),PWideChar(Temp),Length(Temp));
+Result := WideToStr(Copy(Temp,1,Length(Temp) - 1));
+end;
+
+//------------------------------------------------------------------------------
+
 Function UnExpandString(const Str: String): WideString;
 
   Function WStrLen(const Str: WideString): TStrOff;
@@ -862,6 +958,30 @@ If PathUnExpandEnvStringsW(PWideChar(Temp),PWideChar(Result),Length(Result)) the
   SetLength(Result,WStrLen(Result))
 else
   Result := StrToWide(Str);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure ParseMultiString(const Str: WideString; Strs: TStrings);
+var
+  i:    TStrOff;
+  S,L:  TStrOff;
+begin
+Strs.Clear;
+If Length(Str) > 0 then
+  begin
+    // parse the multi-string
+    S := 1;
+    L := 0;
+    For i := 1 to Length(Str) do
+      If Str[i] = WideChar(#0) then
+        begin
+          Strs.Add(WideToStr(Copy(Str,S,L)));
+          S := Succ(i);
+          L := 0;
+        end
+      else Inc(L);
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -1286,7 +1406,7 @@ var
   LastWriteTime:  TFileTime;
 begin
 Result := False;
-FillChar(KeyInfo,SizeOf(TRXKeyInfo),0);
+FillChar(Addr(KeyInfo)^,SizeOf(TRXKeyInfo),0);
 If RegQueryInfoKeyW(Key,nil,nil,nil,@KeyInfo.SubKeys,@KeyInfo.MaxSubKeyLen,
                     @KeyInfo.MaxClassLen,@KeyInfo.Values,
                     @KeyInfo.MaxValueNameLen,@KeyInfo.MaxValueLen,
@@ -1339,7 +1459,7 @@ var
   DataSize:   DWORD;
 begin
 Result := False;
-FillChar(ValueInfo,SizeOf(TRXValueInfo),0);
+FillChar(Addr(ValueInfo)^,SizeOf(TRXValueInfo),0);
 If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@ValueType,nil,@DataSize) in [ERROR_SUCCESS,ERROR_MORE_DATA] then
   begin
     ValueInfo.ValueType := TranslateValueType(ValueType);
@@ -1441,7 +1561,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_SET_VALUE
   finally
     RegCloseKey(TempKey);
   end
-else raise ERXRegistryWriteError.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
   [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
 end;
 
@@ -1457,7 +1577,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   finally
     RegCloseKey(TempKey);
   end
-else raise ERXRegistryWriteError.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
   [TypeName,KeyName,fAuxOpenResult]);
 end;
 
@@ -1636,6 +1756,146 @@ var
 begin
 Result := GetValueDataStat(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
 Data := Integer(Temp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadMacroOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacroOut(const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacroOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataOut(TempKey,ValueName,Str,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacroOut(const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataOut(TempKey,ValueName,Str,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadMacroExtBuff(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacroExtBuff(const KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadMacro(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataStat(TempKey,ValueName,Value,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacro(const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    Result := GetValueDataStat(TempKey,ValueName,Value,Size,ValueType);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacro(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Success: Boolean): Integer;
+var
+  Temp: DWORD;
+begin
+Success := TryReadMacro(RootKey,KeyName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := Integer(Temp);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMacro(const KeyName,ValueName: String; out Success: Boolean): Integer;
+var
+  Temp: DWORD;
+begin
+Success := TryReadMacro(KeyName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := Integer(Temp);
 end;
 
 //------------------------------------------------------------------------------
@@ -1843,20 +2103,40 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.OpenKeyReadOnly(const KeyName: String): Boolean;
+Function TRegistryEx.OpenKeyReadOnly(RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
 var
-  AccessRights:   DWORD;
-  TempKey:        HKEY;
-  WorkingKeyName: String;
+  AccessRightsTemp: DWORD;
+  TempKey:          HKEY;
 begin
 // preserve karWoW64_32Key and karWoW64_64Key from current access rights
-AccessRights := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
-Result := RegOpenKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
+AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
+Result := RegOpenKeyExW(TranslatePredefinedKey(RootKey),
                         PWideChar(StrToWide(TrimKeyName(KeyName))),
-                        0,AccessRights,TempKey) = ERROR_SUCCESS;
+                        0,AccessRightsTemp,TempKey) = ERROR_SUCCESS;
 If Result then
   begin
-    SetAccessRightsSys(AccessRights);
+    SetAccessRightsSys(AccessRightsTemp);
+    fRootKeyHandle := TranslatePredefinedKey(RootKey);
+    fRootKey := RootKey;    
+    ChangeCurrentKey(TempKey,TrimKeyName(KeyName));
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.OpenKeyReadOnly(const KeyName: String): Boolean;
+var
+  AccessRightsTemp: DWORD;
+  TempKey:          HKEY;
+  WorkingKeyName:   String;
+begin
+AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
+Result := RegOpenKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
+                        PWideChar(StrToWide(TrimKeyName(KeyName))),
+                        0,AccessRightsTemp,TempKey) = ERROR_SUCCESS;
+If Result then
+  begin
+    SetAccessRightsSys(AccessRightsTemp);
     ChangeCurrentKey(TempKey,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)));
   end;
 end;
@@ -3044,6 +3324,20 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Boolean): Boolean;
+begin
+Value := TryReadMacro(RootKey,KeyName,ValueName,Result) <> 0;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadBool(const KeyName,ValueName: String; out Value: Boolean): Boolean;
+begin
+Value := TryReadMacro(KeyName,ValueName,Result) <> 0;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadBool(const ValueName: String; out Value: Boolean): Boolean;
 var
   Temp: Integer;
@@ -3053,6 +3347,20 @@ Value := Temp <> 0;
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int8): Boolean;
+begin
+Value := Int8(TryReadMacro(RootKey,KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadInt8(const KeyName,ValueName: String; out Value: Int8): Boolean;
+begin
+Value := Int8(TryReadMacro(KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadInt8(const ValueName: String; out Value: Int8): Boolean;
 var
@@ -3064,6 +3372,20 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt8): Boolean;
+begin
+Value := UInt8(TryReadMacro(RootKey,KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadUInt8(const KeyName,ValueName: String; out Value: UInt8): Boolean;
+begin
+Value := UInt8(TryReadMacro(KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadUInt8(const ValueName: String; out Value: UInt8): Boolean;
 var
   Temp: Integer;
@@ -3073,6 +3395,20 @@ Value := UInt8(Temp);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int16): Boolean;
+begin
+Value := Int16(TryReadMacro(RootKey,KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadInt16(const KeyName,ValueName: String; out Value: Int16): Boolean;
+begin
+Value := Int16(TryReadMacro(KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadInt16(const ValueName: String; out Value: Int16): Boolean;
 var
@@ -3084,6 +3420,20 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt16): Boolean;
+begin
+Value := UInt16(TryReadMacro(RootKey,KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadUInt16(const KeyName,ValueName: String; out Value: UInt16): Boolean;
+begin
+Value := UInt16(TryReadMacro(KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadUInt16(const ValueName: String; out Value: UInt16): Boolean;
 var
   Temp: Integer;
@@ -3093,6 +3443,20 @@ Value := UInt16(Temp);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int32): Boolean;
+begin
+Value := Int32(TryReadMacro(RootKey,KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadInt32(const KeyName,ValueName: String; out Value: Int32): Boolean;
+begin
+Value := Int32(TryReadMacro(KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadInt32(const ValueName: String; out Value: Int32): Boolean;
 var
@@ -3104,6 +3468,20 @@ end;
  
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt32): Boolean;
+begin
+Value := UInt32(TryReadMacro(RootKey,KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadUInt32(const KeyName,ValueName: String; out Value: UInt32): Boolean;
+begin
+Value := UInt32(TryReadMacro(KeyName,ValueName,Result));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadUInt32(const ValueName: String; out Value: UInt32): Boolean;
 var
   Temp: Integer;
@@ -3114,12 +3492,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Int64): Boolean;
+begin
+Result := TryReadMacro(RootKey,KeyName,ValueName,Value,SizeOf(Int64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadInt64(const KeyName,ValueName: String; out Value: Int64): Boolean;
+begin
+Result := TryReadMacro(KeyName,ValueName,Value,SizeOf(Int64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadInt64(const ValueName: String; out Value: Int64): Boolean;
 begin
 Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: UInt64): Boolean;
+begin
+Result := TryReadMacro(RootKey,KeyName,ValueName,Value,SizeOf(UInt64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadUInt64(const KeyName,ValueName: String; out Value: UInt64): Boolean;
+begin
+Result := TryReadMacro(KeyName,ValueName,Value,SizeOf(UInt64),vtQWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean;
 begin
@@ -3128,12 +3534,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Integer): Boolean;
+begin
+Value := TryReadMacro(RootKey,KeyName,ValueName,Result);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadInteger(const KeyName,ValueName: String; out Value: Integer): Boolean;
+begin
+Value := TryReadMacro(KeyName,ValueName,Result);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadInteger(const ValueName: String; out Value: Integer): Boolean;
 begin
 Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Float32): Boolean;
+begin
+Result := TryReadMacro(RootKey,KeyName,ValueName,Value,SizeOf(Float32),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadFloat32(const KeyName,ValueName: String; out Value: Float32): Boolean;
+begin
+Result := TryReadMacro(KeyName,ValueName,Value,SizeOf(Float32),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadFloat32(const ValueName: String; out Value: Float32): Boolean;
 begin
@@ -3142,12 +3576,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Float64): Boolean;
+begin
+Result := TryReadMacro(RootKey,KeyName,ValueName,Value,SizeOf(Float64),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadFloat64(const KeyName,ValueName: String; out Value: Float64): Boolean;
+begin
+Result := TryReadMacro(KeyName,ValueName,Value,SizeOf(Float64),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadFloat64(const ValueName: String; out Value: Float64): Boolean;
 begin
 Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Double): Boolean;
+begin
+Result := TryReadFloat64(RootKey,KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadFloat(const KeyName,ValueName: String; out Value: Double): Boolean;
+begin
+Result := TryReadFloat64(KeyName,ValueName,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadFloat(const ValueName: String; out Value: Double): Boolean;
 begin
@@ -3156,12 +3618,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: Currency): Boolean;
+begin
+Result := TryReadMacro(RootKey,KeyName,ValueName,Value,SizeOf(Currency),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadCurrency(const KeyName,ValueName: String; out Value: Currency): Boolean;
+begin
+Result := TryReadMacro(KeyName,ValueName,Value,SizeOf(Currency),vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadCurrency(const ValueName: String; out Value: Currency): Boolean;
 begin
 Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
 end;
- 
+
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(RootKey,KeyName,ValueName,Double(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadDateTime(const KeyName,ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(KeyName,ValueName,Double(Value));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadDateTime(const ValueName: String; out Value: TDateTime): Boolean;
 begin
@@ -3169,6 +3659,22 @@ Result := TryReadFloat64(ValueName,Double(Value));
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(RootKey,KeyName,ValueName,Double(Value));
+Value := Int(Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadDate(const KeyName,ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(KeyName,ValueName,Double(Value));
+Value := Int(Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadDate(const ValueName: String; out Value: TDateTime): Boolean;
 begin
@@ -3178,6 +3684,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(RootKey,KeyName,ValueName,Double(Value));
+Value := Frac(Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadTime(const KeyName,ValueName: String; out Value: TDateTime): Boolean;
+begin
+Result := TryReadFloat64(KeyName,ValueName,Double(Value));
+Value := Frac(Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadTime(const ValueName: String; out Value: TDateTime): Boolean;
 begin
 Result := TryReadFloat64(ValueName,Double(Value));
@@ -3186,70 +3708,133 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: String): Boolean;
+var
+  Temp: WideString;
+begin
+Result := TryReadMacroOut(RootKey,KeyName,ValueName,Temp,vtString);
+If Result then
+  Value := WideToStr(Temp);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadString(const KeyName,ValueName: String; out Value: String): Boolean;
+var
+  Temp: WideString;
+begin
+Result := TryReadMacroOut(KeyName,ValueName,Temp,vtString);
+If Result then
+  Value := WideToStr(Temp);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadString(const ValueName: String; out Value: String): Boolean;
 var
   Temp: WideString;
 begin
-If GetValueDataOut(GetWorkingKey(True),ValueName,Temp,vtString) then
-  begin
-    Value := WideToStr(Temp);
-    Result := True;
-  end
-else Result := False;
+Result := GetValueDataOut(GetWorkingKey(True),ValueName,Temp,vtString);
+If Result then
+  Value := WideToStr(Temp);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value: String; Expand: Boolean = False): Boolean;
+var
+  Temp: WideString;
+begin
+Result := TryReadMacroOut(RootKey,KeyName,ValueName,Temp,vtExpandString);
+If Result then
+  begin
+    If Expand then
+      Value := ExpandString(Temp)
+    else
+      Value := WideToStr(Temp);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadExpandString(const KeyName,ValueName: String; out Value: String; Expand: Boolean = False): Boolean;
+var
+  Temp: WideString;
+begin
+Result := TryReadMacroOut(KeyName,ValueName,Temp,vtExpandString);
+If Result then
+  begin
+    If Expand then
+      Value := ExpandString(Temp)
+    else
+      Value := WideToStr(Temp);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadExpandString(const ValueName: String; out Value: String; Expand: Boolean = False): Boolean;
 var
-  Temp:     WideString;
-  WideVal:  WideString;
+  Temp: WideString;
 begin
-If GetValueDataOut(GetWorkingKey(True),ValueName,Temp,vtExpandString) then
+Result := GetValueDataOut(GetWorkingKey(True),ValueName,Temp,vtExpandString);
+If Result then
   begin
     If Expand then
-      begin
-        SetLength(WideVal,ExpandEnvironmentStringsW(PWideChar(Temp),nil,0));
-        ExpandEnvironmentStringsW(PWideChar(Temp),PWideChar(WideVal),Length(WideVal));
-        Value := WideToStr(Copy(WideVal,1,Length(WideVal) - 1));
-      end
-    else Value := WideToStr(Temp);
-    Result := True;
-  end
-else Result := False;
+      Value := ExpandString(Temp)
+    else
+      Value := WideToStr(Temp);
+  end;
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings): Boolean;
+var
+  Temp: WideString;
+begin
+Result := TryReadMacroOut(RootKey,KeyName,ValueName,Temp,vtMultiString);
+If Result then
+  ParseMultiString(Temp,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadMultiString(const KeyName,ValueName: String; Value: TStrings): Boolean;
+var
+  Temp: WideString;
+begin
+Result := TryReadMacroOut(KeyName,ValueName,Temp,vtMultiString);
+If Result then
+  ParseMultiString(Temp,Value);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadMultiString(const ValueName: String; Value: TStrings): Boolean;
 var
   Temp: WideString;
-  i:    TStrOff;
-  S,L:  TStrOff;
 begin
-If GetValueDataOut(GetWorkingKey(True),ValueName,Temp,vtMultiString) then
-  begin
-    Value.Clear;
-    If Length(Temp) > 0 then
-      begin
-        // parse the multi-string
-        S := 1;
-        L := 0;
-        For i := 1 to Length(Temp) do
-          If Temp[i] = WideChar(#0) then
-            begin
-              Value.Add(WideToStr(Copy(Temp,S,L)));
-              S := Succ(i);
-              L := 0;
-            end
-          else Inc(L);
-      end;
-    Result := True;
-  end
-else Result := False;
+Result := GetValueDataOut(GetWorkingKey(True),ValueName,Temp,vtMultiString);
+If Result then
+  ParseMultiString(Temp,Value);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Buff; var Size: TMemSize): Boolean;
+begin
+Result := TryReadMacroExtBuff(RootKey,KeyName,ValueName,Buff,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadBinaryBuffer(const KeyName,ValueName: String; out Buff; var Size: TMemSize): Boolean;
+begin
+Result := TryReadMacroExtBuff(KeyName,ValueName,Buff,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadBinaryBuffer(const ValueName: String; out Buff; var Size: TMemSize): Boolean;
 begin
@@ -3258,12 +3843,40 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean;
+begin
+Result := TryReadMacroExtBuff(RootKey,KeyName,ValueName,Memory^,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean;
+begin
+Result := TryReadMacroExtBuff(KeyName,ValueName,Memory^,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadBinaryMemory(const ValueName: String; Memory: Pointer; var Size: TMemSize): Boolean;
 begin
 Result := GetValueDataExtBuff(GetWorkingKey(True),ValueName,Memory^,Size,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.TryReadBinaryMemoryOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean;
+begin
+Result := TryReadMacroOut(RootKey,KeyName,ValueName,Memory,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadBinaryMemoryOut(const KeyName,ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean;
+begin
+Result := TryReadMacroOut(KeyName,ValueName,Memory,Size,vtBinary);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.TryReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer; out Size: TMemSize): Boolean;
 begin
@@ -3272,21 +3885,66 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.TryReadBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream): Boolean;
+var
+  Buffer: Pointer;
+  Size:   TMemSize;
+begin
+Result := TryReadMacroOut(RootKey,KeyName,ValueName,Buffer,Size,vtBinary);
+If Result then
+  begin
+    Stream.WriteBuffer(Buffer^,LongInt(Size));
+    FreeMem(Buffer,Size);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.TryReadBinaryStream(const KeyName,ValueName: String; Stream: TStream): Boolean;
+var
+  Buffer: Pointer;
+  Size:   TMemSize;
+begin
+Result := TryReadMacroOut(KeyName,ValueName,Buffer,Size,vtBinary);
+If Result then
+  begin
+    Stream.WriteBuffer(Buffer^,LongInt(Size));
+    FreeMem(Buffer,Size);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.TryReadBinaryStream(const ValueName: String; Stream: TStream): Boolean;
 var
   Buffer: Pointer;
   Size:   TMemSize;
 begin
-If GetValueDataOut(GetWorkingKey(True),ValueName,Buffer,Size,vtBinary) then
+Result := GetValueDataOut(GetWorkingKey(True),ValueName,Buffer,Size,vtBinary);
+If Result then
   begin
     Stream.WriteBuffer(Buffer^,LongInt(Size));
     FreeMem(Buffer,Size);
-    Result := True;
-  end
-else Result := False;
+  end;
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadBoolDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Boolean): Boolean;
+begin
+If not TryReadBool(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadBoolDef(const KeyName,ValueName: String; Default: Boolean): Boolean;
+begin
+If not TryReadBool(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBoolDef(const ValueName: String; Default: Boolean): Boolean;
 begin
@@ -3296,6 +3954,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadInt8Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int8): Int8;
+begin
+If not TryReadInt8(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt8Def(const KeyName,ValueName: String; Default: Int8): Int8;
+begin
+If not TryReadInt8(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadInt8Def(const ValueName: String; Default: Int8): Int8;
 begin
 If not TryReadInt8(ValueName,Result) then
@@ -3303,6 +3977,22 @@ If not TryReadInt8(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt8Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt8): UInt8;
+begin
+If not TryReadUInt8(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt8Def(const KeyName,ValueName: String; Default: UInt8): UInt8;
+begin
+If not TryReadUInt8(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt8Def(const ValueName: String; Default: UInt8): UInt8;
 begin
@@ -3312,6 +4002,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadInt16Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int16): Int16;
+begin
+If not TryReadInt16(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt16Def(const KeyName,ValueName: String; Default: Int16): Int16;
+begin
+If not TryReadInt16(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadInt16Def(const ValueName: String; Default: Int16): Int16;
 begin
 If not TryReadInt16(ValueName,Result) then
@@ -3319,6 +4025,22 @@ If not TryReadInt16(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt16Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt16): UInt16;
+begin
+If not TryReadUInt16(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt16Def(const KeyName,ValueName: String; Default: UInt16): UInt16;
+begin
+If not TryReadUInt16(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt16Def(const ValueName: String; Default: UInt16): UInt16;
 begin
@@ -3328,6 +4050,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadInt32Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int32): Int32;
+begin
+If not TryReadInt32(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt32Def(const KeyName,ValueName: String; Default: Int32): Int32;
+begin
+If not TryReadInt32(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadInt32Def(const ValueName: String; Default: Int32): Int32;
 begin
 If not TryReadInt32(ValueName,Result) then
@@ -3335,6 +4073,22 @@ If not TryReadInt32(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt32Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt32): UInt32;
+begin
+If not TryReadUInt32(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt32Def(const KeyName,ValueName: String; Default: UInt32): UInt32;
+begin
+If not TryReadUInt32(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt32Def(const ValueName: String; Default: UInt32): UInt32;
 begin
@@ -3344,6 +4098,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadInt64Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Int64): Int64;
+begin
+If not TryReadInt64(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadInt64Def(const KeyName,ValueName: String; Default: Int64): Int64;
+begin
+If not TryReadInt64(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadInt64Def(const ValueName: String; Default: Int64): Int64;
 begin
 If not TryReadInt64(ValueName,Result) then
@@ -3351,6 +4121,22 @@ If not TryReadInt64(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadUInt64Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: UInt64): UInt64;
+begin
+If not TryReadUInt64(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadUInt64Def(const KeyName,ValueName: String; Default: UInt64): UInt64;
+begin
+If not TryReadUInt64(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt64Def(const ValueName: String; Default: UInt64): UInt64;
 begin
@@ -3360,6 +4146,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadIntegerDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Integer): Integer;
+begin
+If not TryReadInteger(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadIntegerDef(const KeyName,ValueName: String; Default: Integer): Integer;
+begin
+If not TryReadInteger(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadIntegerDef(const ValueName: String; Default: Integer): Integer;
 begin
 If not TryReadInteger(ValueName,Result) then
@@ -3367,6 +4169,22 @@ If not TryReadInteger(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloat32Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Float32): Float32;
+begin
+If not TryReadFloat32(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadFloat32Def(const KeyName,ValueName: String; Default: Float32): Float32;
+begin
+If not TryReadFloat32(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat32Def(const ValueName: String; Default: Float32): Float32;
 begin
@@ -3376,6 +4194,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadFloat64Def(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Float64): Float64;
+begin
+If not TryReadFloat64(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadFloat64Def(const KeyName,ValueName: String; Default: Float64): Float64;
+begin
+If not TryReadFloat64(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadFloat64Def(const ValueName: String; Default: Float64): Float64;
 begin
 If not TryReadFloat64(ValueName,Result) then
@@ -3383,6 +4217,22 @@ If not TryReadFloat64(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadFloatDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Double): Double;
+begin
+If not TryReadFloat(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadFloatDef(const KeyName,ValueName: String; Default: Double): Double;
+begin
+If not TryReadFloat(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloatDef(const ValueName: String; Default: Double): Double;
 begin
@@ -3392,6 +4242,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadCurrencyDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: Currency): Currency;
+begin
+If not TryReadCurrency(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadCurrencyDef(const KeyName,ValueName: String; Default: Currency): Currency;
+begin
+If not TryReadCurrency(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadCurrencyDef(const ValueName: String; Default: Currency): Currency;
 begin
 If not TryReadCurrency(ValueName,Result) then
@@ -3399,6 +4265,22 @@ If not TryReadCurrency(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadDateTimeDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadDateTime(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadDateTimeDef(const KeyName,ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadDateTime(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDateTimeDef(const ValueName: String; Default: TDateTime): TDateTime;
 begin
@@ -3408,6 +4290,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadDateDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadDate(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadDateDef(const KeyName,ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadDate(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadDateDef(const ValueName: String; Default: TDateTime): TDateTime;
 begin
 If not TryReadDate(ValueName,Result) then
@@ -3415,6 +4313,22 @@ If not TryReadDate(ValueName,Result) then
 end;
 
 //------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadTimeDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadTime(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadTimeDef(const KeyName,ValueName: String; Default: TDateTime): TDateTime;
+begin
+If not TryReadTime(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadTimeDef(const ValueName: String; Default: TDateTime): TDateTime;
 begin
@@ -3424,6 +4338,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ReadStringDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Default: String): String;
+begin
+If not TryReadString(RootKey,KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadStringDef(const KeyName,ValueName: String; const Default: String): String;
+begin
+If not TryReadString(KeyName,ValueName,Result) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 Function TRegistryEx.ReadStringDef(const ValueName: String; const Default: String): String;
 begin
 If not TryReadString(ValueName,Result) then
@@ -3432,9 +4362,25 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.ReadExpandStringDef(const ValueName: String; const Default: String): String;
+Function TRegistryEx.ReadExpandStringDef(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String;
 begin
-If not TryReadExpandString(ValueName,Result) then
+If not TryReadExpandString(RootKey,KeyName,ValueName,Result,Expand) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadExpandStringDef(const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String;
+begin
+If not TryReadExpandString(KeyName,ValueName,Result,Expand) then
+  Result := Default;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadExpandStringDef(const ValueName: String; const Default: String; Expand: Boolean = False): String;
+begin
+If not TryReadExpandString(ValueName,Result,Expand) then
   Result := Default;
 end;
 
