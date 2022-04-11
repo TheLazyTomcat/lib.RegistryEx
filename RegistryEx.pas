@@ -269,14 +269,14 @@ type
   MaxValueLen, which is in bytes.
 }
   TRXKeyInfo = record
-    SubKeys:            DWORD;
-    MaxSubKeyLen:       DWORD;
-    MaxClassLen:        DWORD;
-    Values:             DWORD;
-    MaxValueNameLen:    DWORD;
-    MaxValueLen:        DWORD;
-    SecurityDescriptor: DWORD;
-    LastWriteTime:      TDateTime;
+    SubKeys:          DWORD;
+    MaxSubKeyLen:     DWORD;
+    MaxClassLen:      DWORD;
+    Values:           DWORD;
+    MaxValueNameLen:  DWORD;
+    MaxValueLen:      DWORD;
+    SecDescrBytes:    DWORD;
+    LastWriteTime:    TDateTime;
   end;
 
   TRXValueInfo = record
@@ -319,6 +319,8 @@ type
     procedure GetValues(Key: HKEY; Values: TStrings); overload; virtual;
     procedure DeleteSubKeys(Key: HKEY); overload; virtual;
     procedure DeleteValues(Key: HKEY); overload; virtual;
+    //--- copy/move auxiliaty methods ---
+    Function MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean; overload; virtual;
     //--- data access methods and macros ---
     procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure SetValueData(Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
@@ -382,6 +384,11 @@ type
 
         Such functions are affecting only the current key, if any is open.
         If no current key is open, then they have no effect.
+
+    If no class is given, it usually means that the method does not operate on
+    any specific key.
+    If more than one class is noted, then the method is operating on more than
+    one key, and the order of noted classes matches order of parameters.
   }
   {
     OverridePredefinedKey maps specified predefined registry key to another
@@ -393,7 +400,7 @@ type
  {A}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
  {B}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
  {D}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; overload; virtual;
- {-}Function RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
+    Function RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
     //--- keys management ---
  {A}Function OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
  {B}Function OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
@@ -476,40 +483,51 @@ type
   }
     //Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
     //Function RenameKey(const OldName, NewName: String): Boolean; virtual;
+    {$message 'copy security descr'}
+  {
+    CopyValue copies value from one arbitrary key into another arbitrary key.
+  }
+{AA}Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AB}Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BA}Function CopyValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BB}Function CopyValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+  {
+    CopyValueTo copies value from subkey of current key or root key into an
+    arbitrary key.
+  }
+{CA}Function CopyValueTo(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CB}Function CopyValueTo(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+  {
+    CopyValueFrom copies value from an arbitrary key into a subkey of current
+    key or root key.
+  }
+{AC}Function CopyValueFrom(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;  
+{BC}Function CopyValueFrom(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+  {
+    CopyValueIn copies value within one key, be it arbitrary, current or root
+    key.
+  }
+ {A}Function CopyValueIn(RootKey: TRXPredefinedKey; const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
+ {B}Function CopyValueIn(const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
+ {C}Function CopyValueIn(const SrcValueName,DstValueName: String): Boolean; overload; virtual;
+{AA}Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AB}Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BA}Function MoveValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{BB}Function MoveValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CA}Function MoveValueTo(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{CB}Function MoveValueTo(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
+{AC}Function MoveValueFrom(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+{BC}Function MoveValueFrom(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+ {A}Function MoveValueIn(RootKey: TRXPredefinedKey; const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
+ {B}Function MoveValueIn(const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
+ {C}Function MoveValueIn(const SrcValueName,DstValueName: String): Boolean; overload; virtual;
   {
     Afaik there is no way to directly rename a value, so it is instead copied
     to a new value with NewName and the original (OldName) is then deleted.
   }
-    {$message 'copy security descr'}
-    //Function RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldName, NewName: String): Boolean; virtual;
-    //Function RenameValue(const KeyName,OldName, NewName: String): Boolean; virtual;
- {C}Function RenameValue(const OldName, NewName: String): Boolean; virtual;
-
-    // moving between keys
-{AA}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{AB}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{AC}//Function MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-{BA}//Function MoveValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{BB}//Function MoveValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{BC}//Function MoveValue(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-{CA}//Function MoveValue(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{CB}//Function MoveValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{CC}//Function MoveValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-
-    // moving within one key
-    //Function MoveValue(RootKey: TRXPredefinedKey; const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
-    //Function MoveValue(const KeyName,SrcValueName,DstValueName: String): Boolean; overload; virtual;
-    //Function MoveValue(const SrcValueName,DstValueName: String): Boolean; overload; virtual;
-
-{AA}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{AB}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{AC}//Function CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-{BA}//Function CopyValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{BB}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{BC}//Function CopyValue(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
-{CA}//Function CopyValue(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{CB}//Function CopyValue(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean; overload; virtual;
-{CC}//Function CopyValue(const SrcValueName: String; const DstValueName: String): Boolean; overload; virtual;
+ {A}Function RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldName,NewName: String): Boolean; overload; virtual;
+ {B}Function RenameValue(const KeyName,OldName, NewName: String): Boolean; overload; virtual;
+ {C}Function RenameValue(const OldName, NewName: String): Boolean; overload; virtual;
 
     //--- keys saving and loading ---
     ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
@@ -759,6 +777,7 @@ type
  {B}Function ReadExpandStringDef(const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
  {C}Function ReadExpandStringDef(const ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
     //--- values read ---
+    {$message 'different exception for invalid key'}  
  {A}Function ReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
  {B}Function ReadBool(const KeyName,ValueName: String): Boolean; overload; virtual;
  {C}Function ReadBool(const ValueName: String): Boolean; overload; virtual;
@@ -1448,7 +1467,7 @@ FillChar(Addr(KeyInfo)^,SizeOf(TRXKeyInfo),0);
 If RegQueryInfoKeyW(Key,nil,nil,nil,@KeyInfo.SubKeys,@KeyInfo.MaxSubKeyLen,
                     @KeyInfo.MaxClassLen,@KeyInfo.Values,
                     @KeyInfo.MaxValueNameLen,@KeyInfo.MaxValueLen,
-                    @KeyInfo.SecurityDescriptor,@LastWriteTime) = ERROR_SUCCESS then
+                    @KeyInfo.SecDescrBytes,@LastWriteTime) = ERROR_SUCCESS then
   begin
     KeyInfo.LastWriteTime := FileTimeToDateTime(LastWriteTime);
     Result := True;
@@ -1564,6 +1583,38 @@ try
 finally
   Values.Free;
 end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+  Buffer:     Pointer;
+  Size:       TMemSize;
+begin
+Result := False;
+If not GetValueInfo(DstKey,DstValueName,ValueInfo) then
+  If GetValueInfo(SrcKey,SrcValueName,ValueInfo) then
+    begin
+      If ValueInfo.DataSize > 0 then
+        begin
+          If GetValueDataOut(SrcKey,SrcValueName,Buffer,Size,ValueInfo.ValueType) then
+            try
+              SetValueData(DstKey,DstValueName,Buffer^,Size,ValueInfo.ValueType);
+              Result := True;
+            finally
+              FreeMem(Buffer,Size);
+            end;
+        end
+      else
+        begin
+          SetValueData(DstKey,DstValueName,nil^,0,ValueInfo.ValueType);
+          Result := True;
+        end;
+      If DeleteSource then
+        RegDeleteValueW(SrcKey,PWideChar(StrToWide(SrcValueName)));
+    end;
 end;
 
 //------------------------------------------------------------------------------
@@ -2649,7 +2700,7 @@ var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
-              KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+     KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteSubKeys(TempKey);
   finally
@@ -2664,7 +2715,7 @@ var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
-                            KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+     KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteSubKeys(TempKey);
   finally
@@ -2685,8 +2736,7 @@ procedure TRegistryEx.DeleteValues(RootKey: TRXPredefinedKey; const KeyName: Str
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
-              KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteValues(TempKey);
   finally
@@ -2700,8 +2750,7 @@ procedure TRegistryEx.DeleteValues(const KeyName: String);
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
-              KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteValues(TempKey);
   finally
@@ -2768,36 +2817,383 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.RenameValue(const OldName, NewName: String): Boolean;
+Function TRegistryEx.CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean;
 var
-  ValueInfo:  TRXValueInfo;
-  Buffer:     Pointer;
+  SrcKey,DstKey:  HKEY;
 begin
 Result := False;
-If ValueExists(OldName) and not ValueExists(NewName) then
-  If GetValueInfo(OldName,ValueInfo) then
-    If ValueInfo.DataSize > 0 then
-      begin
-        GetMem(Buffer,ValueInfo.DataSize);
-        try
-          If GetValueDataStat(GetWorkingKey(True),OldName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType) then
-            begin
-              SetValueData(GetWorkingKey(True),NewName,Buffer^,ValueInfo.DataSize,ValueInfo.ValueType);
-              If not DeleteValue(OldName) then
-                DeleteValue(NewName);
-              Result := True;
-            end;
-        finally
-          FreeMem(Buffer,ValueInfo.DataSize);
-        end;
-      end
-    else
-      begin
-        SetValueData(GetWorkingKey(True),NewName,nil^,0,ValueInfo.ValueType);
-        If not DeleteValue(OldName) then
-          DeleteValue(NewName);
-        Result := True;
+If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
+      finally
+        RegCloseKey(DstKey);
       end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.CopyValueTo(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean;
+var
+  DstKey: HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+  try
+    Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,False);
+  finally
+    RegCloseKey(DstKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValueTo(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean;
+var
+  DstKey: HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+  try
+    Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,False);
+  finally
+    RegCloseKey(DstKey);
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.CopyValueFrom(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean;
+var
+  SrcKey: HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_QUERY_VALUE,SrcKey) then
+  try
+    Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,False);
+  finally
+    RegCloseKey(SrcKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValueFrom(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean;
+var
+  SrcKey: HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),KEY_QUERY_VALUE,SrcKey) then
+  try
+    Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,False);
+  finally
+    RegCloseKey(SrcKey);
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.CopyValueIn(RootKey: TRXPredefinedKey; const KeyName,SrcValueName,DstValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,False);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValueIn(const KeyName,SrcValueName,DstValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,False);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyValueIn(const SrcValueName,DstValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+TempKey := GetWorkingKey(True);
+Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,False);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_SET_VALUE or KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValue(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_SET_VALUE or KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValue(const SrcKeyName,SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),KEY_SET_VALUE or KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValue(const SrcKeyName,SrcValueName: String; const DstKeyName,DstValueName: String): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+begin
+Result := False;
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),KEY_SET_VALUE or KEY_QUERY_VALUE,SrcKey) then
+  try
+    If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+      try
+        Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
+      finally
+        RegCloseKey(DstKey);
+      end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveValueTo(const SrcValueName: String; DstRootKey: TRXPredefinedKey; const DstKeyName,DstValueName: String): Boolean;
+var
+  DstKey: HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+  try
+    Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,True);
+  finally
+    RegCloseKey(DstKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValueTo(const SrcValueName: String; const DstKeyName,DstValueName: String): Boolean;
+var
+  DstKey: HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),KEY_SET_VALUE,DstKey) then
+  try
+    Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,True);
+  finally
+    RegCloseKey(DstKey);
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveValueFrom(SrcRootKey: TRXPredefinedKey; const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean;
+var
+  SrcKey: HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_SET_VALUE or KEY_QUERY_VALUE,SrcKey) then
+  try
+    Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,True);
+  finally
+    RegCloseKey(SrcKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValueFrom(const SrcKeyName,SrcValueName: String; const DstValueName: String): Boolean;
+var
+  SrcKey: HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),KEY_SET_VALUE or KEY_QUERY_VALUE,SrcKey) then
+  try
+    Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,True);
+  finally
+    RegCloseKey(SrcKey);
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveValueIn(RootKey: TRXPredefinedKey; const KeyName,SrcValueName,DstValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,True);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValueIn(const KeyName,SrcValueName,DstValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  try
+    Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,True);
+  finally
+    RegCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveValueIn(const SrcValueName,DstValueName: String): Boolean;
+var
+  TempKey:  HKEY;
+begin
+TempKey := GetWorkingKey(True);
+Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,True);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldName,NewName: String): Boolean;
+begin
+Result := MoveValueIn(RootKey,KeyName,OldName,NewName);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.RenameValue(const KeyName,OldName, NewName: String): Boolean;
+begin
+Result := MoveValueIn(KeyName,OldName,NewName);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.RenameValue(const OldName, NewName: String): Boolean;
+begin
+Result := MoveValueIn(OldName,NewName);
 end;
 
 //------------------------------------------------------------------------------
