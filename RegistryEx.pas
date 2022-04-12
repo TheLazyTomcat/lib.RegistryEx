@@ -295,6 +295,7 @@ type
     fAccessRights:      TRXKeyAccessRights;
     fRootKeyHandle:     HKEY;
     fRootKey:           TRXPredefinedKey;
+    fRemoteRootKey:     Boolean;
     fCurrentKeyHandle:  HKEY;
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
@@ -311,6 +312,7 @@ type
     Function GetCurrentKeyPath: String; virtual;
     //--- auxiliaty methods ---
     Function AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
+    procedure ChangeRootKey(KeyHandle: HKEY; Key: TRXPredefinedKey); virtual;
     procedure ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
     Function GetWorkingKey(Relative: Boolean; out WorkingKeyName: String): HKEY; overload; virtual;
     Function GetWorkingKey(Relative: Boolean): HKEY; overload; virtual;
@@ -374,7 +376,7 @@ type
     destructor Destroy; override;
     //--- global registry functions ---
     Function DisablePredefinedCache(AllKeys: Boolean): Boolean; virtual;
-    //Function ConnectRegistry(const MachineName: String): Boolean; virtual;
+    Function ConnectRegistry(const MachineName: String; RootKey: TRXPredefinedKey): Boolean; virtual;
   {
     Behavioral classes of TRegistyEx public methods:
 
@@ -891,6 +893,7 @@ type
     property RootKeyHandle: HKEY read fRootKeyHandle write SetRootKeyHandle;
     property RootKey: TRXPredefinedKey read fRootKey write SetRootKey;
     property RootKeyString: String read GetRootKeyString;
+    property RemoteRootKey: Boolean read fRemoteRootKey;
     property CurrentKeyHandle: HKEY read fCurrentKeyHandle;
     property CurrentKeyName: String read fCurrentKeyName;
   {
@@ -1384,8 +1387,7 @@ begin
 If Value <> fRootKeyHandle then
   begin
     CloseKey;
-    fRootKeyHandle := Value;
-    fRootKey := TranslatePredefinedKey(Value);
+    ChangeRootKey(Value,TranslatePredefinedKey(Value));
   end;
 end;
 
@@ -1396,8 +1398,7 @@ begin
 If Value <> fRootKey then
   begin
     CloseKey;
-    fRootKeyHandle := TranslatePredefinedKey(Value);
-    fRootKey := Value;
+    ChangeRootKey(TranslatePredefinedKey(Value),Value);
   end;
 end;
 
@@ -1405,7 +1406,7 @@ end;
 
 Function TRegistryEx.GetRootKeyString: String;
 begin
-Result := PredefinedKeyToStr(fRootKeyHandle);
+Result := PredefinedKeyToStr(fRootKey);
 end;
 
 //------------------------------------------------------------------------------
@@ -1464,6 +1465,17 @@ begin
 NewKey := 0;
 fAuxOpenResult := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey);
 Result := fAuxOpenResult = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.ChangeRootKey(KeyHandle: HKEY; Key: TRXPredefinedKey);
+begin
+If fRemoteRootKey then
+  RegCloseKey(fRootKeyHandle);
+fRootKeyHandle := KeyHandle;
+fRootKey := Key;
+fRemoteRootKey := False;
 end;
 
 //------------------------------------------------------------------------------
@@ -2271,6 +2283,7 @@ fAccessRightsSys := TranslateAccessRights(AccessRights);;
 fAccessRights := AccessRights;
 fRootKeyHandle := TranslatePredefinedKey(RootKey);
 fRootKey := RootKey;
+fRemoteRootKey := False;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
 fFlushOnClose := False;
@@ -2283,6 +2296,8 @@ end;
 procedure TRegistryEx.Finalize;
 begin
 CloseKey;
+If fRemoteRootKey then
+  RegCloseKey(fRootKeyHandle);
 end;
 
 {-------------------------------------------------------------------------------
@@ -2348,6 +2363,21 @@ If AllKeys then
       Result := False;
   end
 else Result := RegDisablePredefinedCache = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ConnectRegistry(const MachineName: String; RootKey: TRXPredefinedKey): Boolean;
+var
+  TempKey:  HKEY;
+begin
+Result := RegConnectRegistryW(PWideChar(StrToWide(MachineName)),TranslatePredefinedKey(RootKey),TempKey) = ERROR_SUCCESS;
+If Result then
+  begin
+    CloseKey;
+    ChangeRootKey(TempKey,RootKey);
+    fRemoteRootKey := True;
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -2427,8 +2457,7 @@ else
   end;
 If Result then
   begin
-    fRootKeyHandle := TranslatePredefinedKey(RootKey);
-    fRootKey := RootKey;
+    ChangeRootKey(TranslatePredefinedKey(RootKey),RootKey);
     ChangeCurrentKey(TempKey,TrimKeyName(KeyName));
   end;
 end;
@@ -2500,8 +2529,7 @@ Result := RegOpenKeyExW(TranslatePredefinedKey(RootKey),
 If Result then
   begin
     SetAccessRightsSys(AccessRightsTemp);
-    fRootKeyHandle := TranslatePredefinedKey(RootKey);
-    fRootKey := RootKey;    
+    ChangeRootKey(TranslatePredefinedKey(RootKey),RootKey);
     ChangeCurrentKey(TempKey,TrimKeyName(KeyName));
   end;
 end;
@@ -5772,8 +5800,8 @@ AdvApi32Handle := OpenAndCheckLibrary('advapi32.dll');
 {$IFNDEF CPU64bit}
 {
   Functions Reg*ReflectionKey are always loaded on 64bit Windows. On 32bit
-  system, they are loaded only in Vista and newer or when running under WoW64
-  in Windows XP 64bit.
+  system, they are loaded only on Vista and newer or when running under WoW64
+  (including Windows XP 64bit).
 }
 If IsWindowsVistaOrGreater or IsRunningUnderWoW64 then
 {$ENDIF}
