@@ -14,8 +14,9 @@ unit RegistryEx;
 
 {$IFDEF FPC}
   {$MODE ObjFPC}
-  {$MODESWITCH DuplicateLocals+}
-  {$MODESWITCH PointerToProcVar+}
+  {$MODESWITCH DuplicateLocals}
+  {$MODESWITCH PointerToProcVar}
+  {$MODESWITCH ClassicProcVars}
   {$DEFINE FPC_DisableWarns}
   {$MACRO ON}
 {$ENDIF}
@@ -91,8 +92,7 @@ const
 -------------------------------------------------------------------------------}
 const
   REG_CREATED_NEW_KEY     = DWORD($00000001); // New Registry Key created
-  REG_OPENED_EXISTING_KEY = DWORD($00000002); // Existing Key opened
-
+  REG_OPENED_EXISTING_KEY = DWORD($00000002); // Existing Key opened   
 
 {-------------------------------------------------------------------------------
     System constants - hive format to be used by Reg(Nt)SaveKeyEx
@@ -299,6 +299,7 @@ type
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
     fAuxOpenResult:     Integer;  // system error code from last call to AuxOpenKey
+    fAuxReadResult:     Integer;  // system error code from last read macro
     //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
@@ -322,8 +323,9 @@ type
     //--- copy/move auxiliaty methods ---
     Function MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean; overload; virtual;
     //--- data access methods and macros ---
+    procedure SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
     procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
-    procedure SetValueData(Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
     procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure WriteMacro(const TypeName,KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer); overload; virtual;
@@ -331,8 +333,8 @@ type
     Function GetValueDataOut(Key: HKEY; const ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataOut(Key: HKEY; const ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean; overload; virtual;
     Function GetValueDataExtBuff(Key: HKEY; const ValueName: String; out Data; var Size: TMemSize; ValueType: TRXValueType): Boolean; virtual;
-    Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
-    Function GetValueDataStat(Key: HKEY; const ValueName: String; out Data: Integer): Boolean; overload; virtual;
+    Function GetValueData(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
+    Function GetValueData(Key: HKEY; const ValueName: String; out Data: Integer): Boolean; overload; virtual;
     Function TryReadMacroOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function TryReadMacroOut(const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function TryReadMacroOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType): Boolean; overload; virtual;
@@ -343,6 +345,21 @@ type
     Function TryReadMacro(const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType): Boolean; overload; virtual;
     Function TryReadMacro(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Success: Boolean): Integer; overload; virtual;
     Function TryReadMacro(const KeyName,ValueName: String; out Success: Boolean): Integer; overload; virtual;
+    procedure ReadMacroOut(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroOut(const TypeName,KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroOut(const TypeName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroOut(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroOut(const TypeName,KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroOut(const TypeName,ValueName: String; out Str: WideString; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroExtBuff(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroExtBuff(const TypeName,KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacroExtBuff(const TypeName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacro(const TypeName,KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    procedure ReadMacro(const TypeName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    Function ReadMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Integer; overload; virtual;
+    Function ReadMacro(const TypeName,KeyName,ValueName: String): Integer; overload; virtual;
+    Function ReadMacro(const TypeName,ValueName: String): Integer; overload; virtual;
     //--- init/final methods ---
     procedure Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights); virtual;
     procedure Finalize; virtual;
@@ -356,8 +373,8 @@ type
     constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;  // root key is set to pkCurrentUser
     destructor Destroy; override;
     //--- global registry functions ---
-    ////Function ConnectRegistry(const MachineName: String): Boolean; virtual;
-    ////Function DisablePredefinedCache: Boolean; virtual;
+    Function DisablePredefinedCache(AllKeys: Boolean): Boolean; virtual;
+    //Function ConnectRegistry(const MachineName: String): Boolean; virtual;
   {
     Behavioral classes of TRegistyEx public methods:
 
@@ -404,8 +421,8 @@ type
     //--- keys management ---
  {A}Function OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
  {B}Function OpenKey(const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
- {A}Function OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean): Boolean; overload; virtual;
- {B}Function OpenKey(const KeyName: String; CanCreate: Boolean): Boolean; overload; virtual;
+ {A}Function OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean = False): Boolean; overload; virtual;
+ {B}Function OpenKey(const KeyName: String; CanCreate: Boolean = False): Boolean; overload; virtual;
   {
     OpenKeyReadOnly, when successful, will change AccessRight property to
     karRead, but it will also preserve karWoW64_32Key and karWoW64_64Key if
@@ -421,8 +438,10 @@ type
  {B}Function KeyExists(const KeyName: String): Boolean; overload; virtual;
  {A}Function CreateKey(RootKey: TRXPredefinedKey; const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
  {B}Function CreateKey(const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean; overload; virtual;
- {A}Function DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
- {B}Function DeleteKey(const KeyName: String): Boolean; overload; virtual;
+ {A}Function DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String; CanDeleteCurrentKey: Boolean; out CurrentKeyClosed: Boolean): Boolean; overload; virtual;
+ {B}Function DeleteKey(const KeyName: String; CanDeleteCurrentKey: Boolean; out CurrentKeyClosed: Boolean): Boolean; overload; virtual;
+ {A}Function DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String; CanDeleteCurrentKey: Boolean = True): Boolean; overload; virtual;
+ {B}Function DeleteKey(const KeyName: String; CanDeleteCurrentKey: Boolean = True): Boolean; overload; virtual;
  {D}procedure FlushKey; virtual;
  {D}procedure CloseKey; virtual;
     //--- key information ---
@@ -483,6 +502,8 @@ type
   }
     //Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
     //Function RenameKey(const OldName, NewName: String): Boolean; virtual;
+    //CopyTree
+    //MoveTree
     {$message 'copy security descr'}
   {
     CopyValue copies value from one arbitrary key into another arbitrary key.
@@ -777,7 +798,6 @@ type
  {B}Function ReadExpandStringDef(const KeyName,ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
  {C}Function ReadExpandStringDef(const ValueName: String; const Default: String; Expand: Boolean = False): String; overload; virtual;
     //--- values read ---
-    {$message 'different exception for invalid key'}  
  {A}Function ReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
  {B}Function ReadBool(const KeyName,ValueName: String): Boolean; overload; virtual;
  {C}Function ReadBool(const ValueName: String): Boolean; overload; virtual;
@@ -888,13 +908,13 @@ type
     Use this only when really needed, as it negatively affects performance.
   }
     property FlushOnClose: Boolean read fFlushOnClose write fFlushOnClose;
-
   end;
 
 implementation
 
 uses
-  {$IFNDEF CPU64bit}WindowsVersion,{$ENDIF} StrRect, DynLibUtils;
+  StrUtils,
+  StrRect, DynLibUtils, WindowsVersion;
 
 {$IFDEF FPC_DisableWarns}
   {$DEFINE FPCDWM}
@@ -913,16 +933,22 @@ const
   UNICODE_STRING_MAX_CHARS = 32767;
   _DELETE                  = $00010000;
   READ_CONTROL             = $00020000;
+  ERROR_INCORRECT_SIZE     = 1462;
+  ERROR_DATATYPE_MISMATCH  = 1629;
 
 type
   LONG    = LongInt;
   LPBYTE  = ^Byte;
-  LSTATUS = Int32;    
+  LSTATUS = Int32;
+
+//------------------------------------------------------------------------------
 
 // statically linked functions
 Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
 
 Function RegOverridePredefKey(hKey: HKEY; hNewHKey: HKEY): LONG; stdcall; external 'advapi32.dll';
+
+Function RegDisablePredefinedCache: LONG; stdcall; external 'advapi32.dll';
 
 Function RegEnumValueW(
   hKey:           HKEY;
@@ -935,16 +961,20 @@ Function RegEnumValueW(
   lpcbData:       LPDWORD
 ): LSTATUS; stdcall; external 'advapi32.dll';
 
+Function SHRegDuplicateHKey(hkey: HKEY): HKEY; stdcall; external 'shlwapi.dll';
 Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'shlwapi.dll';
 Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'shlwapi.dll';
 
 Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
 
-// dynamically linked functions (might not be present on all systems (namely Windows XP 32bit)
+//------------------------------------------------------------------------------
+
+// dynamically linked functions (might not be present on all systems (namely Windows XP)
 var
-  RegQueryReflectionKey:    Function(hBase: HKEY; bIsReflectionDisabled: PBOOL): LONG; stdcall = nil;
-  RegEnableReflectionKey:   Function(hBase: HKEY): LONG; stdcall = nil;
-  RegDisableReflectionKey:  Function(hBase: HKEY): LONG; stdcall = nil;
+  RegQueryReflectionKey:        Function(hBase: HKEY; bIsReflectionDisabled: PBOOL): LONG; stdcall = nil;
+  RegEnableReflectionKey:       Function(hBase: HKEY): LONG; stdcall = nil;
+  RegDisableReflectionKey:      Function(hBase: HKEY): LONG; stdcall = nil;
+  RegDisablePredefinedCacheEx:  Function: LONG; stdcall = nil;
 
 {===============================================================================
     TRegistryEx - internal functions
@@ -1074,7 +1104,7 @@ end;
 Function IsRelativeKeyName(const KeyName: String): Boolean;
 begin
 {
-  If the key name starts with register path delimiter (backslash, \ , #92), it
+  If the key name starts with register path delimiter (backslash, \, #92), it
   is considered to be an absolute path within the root key, otherwise it is
   considered to be relative to current key.
 }
@@ -1082,6 +1112,20 @@ If Length(KeyName) > 0 then
   Result := KeyName[1] <> REG_PATH_DELIMITER
 else
   Result := True;
+end;
+
+//------------------------------------------------------------------------------
+
+Function IsSubKeyOf(const SubKeyName,KeyName: String): Boolean;
+begin
+If (Length(KeyName) > 0) and (Length(SubKeyName) > 0) then
+  begin
+    If Length(KeyName) < Length(SubKeyName) then
+      Result := AnsiStartsText(KeyName,SubKeyName) and (SubKeyName[Length(KeyName) + 1] = REG_PATH_DELIMITER)
+    else
+      Result := AnsiSameText(SubKeyName,KeyName);
+  end
+else Result := False;
 end;
 
 //------------------------------------------------------------------------------
@@ -1619,6 +1663,27 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
+var
+  CallResult: LSTATUS;
+begin
+CallResult := RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size));
+If CallResult <> ERROR_SUCCESS then
+  raise ERXRegistryWriteError.CreateFmt('TRegistryEx.Write%s: Unable to write value "%s" (%d).',[TypeName,ValueName,CallResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; Data: Integer);
+var
+  Temp: DWORD;
+begin
+Temp := DWORD(Data);
+SetValueData(TypeName,Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
 var
   CallResult: LSTATUS;
@@ -1626,16 +1691,6 @@ begin
 CallResult := RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size));
 If CallResult <> ERROR_SUCCESS then
   raise ERXRegistryWriteError.CreateFmt('TRegistryEx.SetValueData: Unable to write value "%s" (%d).',[ValueName,CallResult]);
-end;
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; Data: Integer);
-var
-  Temp: DWORD;
-begin
-Temp := DWORD(Data);
-SetValueData(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
 end;
 
 //------------------------------------------------------------------------------
@@ -1646,7 +1701,7 @@ var
 begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
   try
-    SetValueData(TempKey,ValueName,Value,Size,ValueType);
+    SetValueData(TypeName,TempKey,ValueName,Value,Size,ValueType);
   finally
     RegCloseKey(TempKey);
   end
@@ -1662,7 +1717,7 @@ var
 begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
   try
-    SetValueData(TempKey,ValueName,Value,Size,ValueType);
+    SetValueData(TypeName,TempKey,ValueName,Value,Size,ValueType);
   finally
     RegCloseKey(TempKey);
   end
@@ -1698,54 +1753,59 @@ var
   RegValueType: DWORD;
 begin
 Result := False;
-If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize) in [ERROR_SUCCESS,ERROR_MORE_DATA] then
-  If TranslateValueType(RegValueType) = ValueType then
-    begin
-      If RegDataSize <> 0 then
-        begin
-          // non-empty data
-          // it is necessary to keep the size, as RegQueryValueExW can fill the RegDataSize with bogus data
-          Size := TMemSize(RegDataSize);
-          GetMem(Mem,Size);
-          while True do
-            begin
-              case RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,Mem,@RegDataSize) of
-                ERROR_SUCCESS:    begin
-                                    If TMemSize(RegDataSize) <> Size then
-                                      begin
-                                        Size := TMemSize(RegDataSize);
-                                        ReallocMem(Mem,Size);
-                                      end;
-                                    Result := True;
-                                    Break{while};
-                                  end;
-                ERROR_MORE_DATA:  begin
-                                    // do not call realloc, there is no need to preserve any data
-                                    FreeMem(Mem,Size);
-                                    Size := TMemSize(RegDataSize) * 2;
-                                    GetMem(Mem,Size);
-                                    RegDataSize := DWORD(Size);
-                                  end;
-              else
-               {some error...}
-                Break{while};
+fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize);
+If fAuxReadResult in [ERROR_SUCCESS,ERROR_MORE_DATA] then
+  begin
+    If TranslateValueType(RegValueType) = ValueType then
+      begin
+        If RegDataSize <> 0 then
+          begin
+            // non-empty data
+            // it is necessary to keep the size, as RegQueryValueExW can fill the RegDataSize with bogus data
+            Size := TMemSize(RegDataSize);
+            GetMem(Mem,Size);
+            while True do
+              begin
+                fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,Mem,@RegDataSize);
+                case fAuxReadResult of
+                  ERROR_SUCCESS:    begin
+                                      If TMemSize(RegDataSize) <> Size then
+                                        begin
+                                          Size := TMemSize(RegDataSize);
+                                          ReallocMem(Mem,Size);
+                                        end;
+                                      Result := True;
+                                      Break{while};
+                                    end;
+                  ERROR_MORE_DATA:  begin
+                                      // do not call realloc, there is no need to preserve any data
+                                      FreeMem(Mem,Size);
+                                      Size := TMemSize(RegDataSize) * 2;
+                                      GetMem(Mem,Size);
+                                      RegDataSize := DWORD(Size);
+                                    end;
+                else
+                 {some error...}
+                  Break{while};
+                end;
               end;
-            end;
-          If not Result then
-            begin
-              FreeMem(Mem,Size);
-              Mem := nil;
-              Size := 0;
-            end;
-        end
-      else
-        begin
-          // zero-size data
-          Mem := nil;
-          Size := 0;
-          Result := True;
-        end;
-    end;
+            If not Result then
+              begin
+                FreeMem(Mem,Size);
+                Mem := nil;
+                Size := 0;
+              end;
+          end
+        else
+          begin
+            // zero-size data
+            Mem := nil;
+            Size := 0;
+            Result := True;
+          end;
+      end
+    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1756,49 +1816,54 @@ var
   RegValueType: DWORD;
 begin
 Result := False;
-If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize) in [ERROR_SUCCESS,ERROR_MORE_DATA] then
-  If TranslateValueType(RegValueType) = ValueType then
-    begin
-      If RegDataSize <> 0 then
-        begin
-          // non-empty data
-          SetLength(Str,RegDataSize div SizeOf(WideChar));
-          RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
-          while True do
-            begin
-              case RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,PByte(PWideChar(Str)),@RegDataSize) of
-                ERROR_SUCCESS:    begin
-                                    If RegDataSize <> DWORD(Length(Str) * SizeOf(WideChar)) then
+fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize);
+If fAuxReadResult in [ERROR_SUCCESS,ERROR_MORE_DATA] then
+  begin
+    If TranslateValueType(RegValueType) = ValueType then
+      begin
+        If RegDataSize <> 0 then
+          begin
+            // non-empty data
+            SetLength(Str,RegDataSize div SizeOf(WideChar));
+            RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
+            while True do
+              begin
+                fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,PByte(PWideChar(Str)),@RegDataSize);
+                case fAuxReadResult of
+                  ERROR_SUCCESS:    begin
+                                      If RegDataSize <> DWORD(Length(Str) * SizeOf(WideChar)) then
+                                        SetLength(Str,RegDataSize div SizeOf(WideChar));
+                                      Result := True;
+                                      Break{while};
+                                    end;
+                  ERROR_MORE_DATA:  begin
+                                      SetLength(Str,0); // prevent copying of data
                                       SetLength(Str,RegDataSize div SizeOf(WideChar));
-                                    Result := True;
-                                    Break{while};
-                                  end;
-                ERROR_MORE_DATA:  begin
-                                    SetLength(Str,0); // prevent copying of data
-                                    SetLength(Str,RegDataSize div SizeOf(WideChar));
-                                    RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
-                                  end;
-              else
-               {some error...}
-                Break{while};
+                                      RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
+                                    end;
+                else
+                 {some error...}
+                  Break{while};
+                end;
               end;
-            end;
-          If Result then
-            begin
-              // remove terminating zero
-              If Length(Str) > 0 then
-                If Str[Length(Str)] = WideChar(#0) then
-                  SetLength(Str,Length(Str) - 1);
-            end
-          else Str := '';
-        end
-      else
-        begin
-          // zero-size data
-          Str := '';
-          Result := True;
-        end;
-    end;
+            If Result then
+              begin
+                // remove terminating zero
+                If Length(Str) > 0 then
+                  If Str[Length(Str)] = WideChar(#0) then
+                    SetLength(Str,Length(Str) - 1);
+              end
+            else Str := '';
+          end
+        else
+          begin
+            // zero-size data
+            Str := '';
+            Result := True;
+          end;
+      end
+    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -1808,42 +1873,55 @@ var
   RegDataSize:  DWORD;
   RegValueType: DWORD;
 begin
+Result := False;
 RegDataSize := DWORD(Size);
-If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize) = ERROR_SUCCESS then
+fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize);
+If fAuxReadResult = ERROR_SUCCESS then
   begin
-    Result := TranslateValueType(ValueType) = RegValueType;
-    If Result then
-      Size := TMemSize(RegDataSize);
-  end
-else Result := False;
+    If TranslateValueType(ValueType) = RegValueType then
+      begin
+        Result := True;
+        Size := TMemSize(RegDataSize);
+      end
+    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+  end;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.GetValueDataStat(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
+Function TRegistryEx.GetValueData(Key: HKEY; const ValueName: String; out Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
 var
   RegDataSize:  DWORD;
   RegValueType: DWORD;
 begin
+Result := False;
 RegDataSize := DWORD(Size);
-If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize) = ERROR_SUCCESS then
-{
-  This function is intended only for invariant-size data, so to consider it
-  successful, the amount of read data must equal to what was requested, and
-  actual data type must match requested type.
-}
-  Result := (TMemSize(RegDataSize) = Size) and (TranslateValueType(ValueType) = RegValueType)
-else
-  Result := False;
+fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize);
+If fAuxReadResult = ERROR_SUCCESS then
+  begin
+  {
+    This function is intended only for invariant-size data, so to consider it
+    successful, the amount of read data must equal to what was requested, and
+    actual data type must match requested type.
+  }
+    If TranslateValueType(ValueType) = RegValueType then
+      begin
+        If TMemSize(RegDataSize) = Size then
+          Result := True
+        else
+          fAuxReadResult := ERROR_INCORRECT_SIZE;
+      end
+    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.GetValueDataStat(Key: HKEY; const ValueName: String; out Data: Integer): Boolean;
+Function TRegistryEx.GetValueData(Key: HKEY; const ValueName: String; out Data: Integer): Boolean;
 var
   Temp: DWORD;
 begin
-Result := GetValueDataStat(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := GetValueData(Key,ValueName,Temp,SizeOf(DWORD),vtDWord);
 Data := Integer(Temp);
 end;
 
@@ -1945,7 +2023,7 @@ var
 begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
-    Result := GetValueDataStat(TempKey,ValueName,Value,Size,ValueType);
+    Result := GetValueData(TempKey,ValueName,Value,Size,ValueType);
   finally
     RegCloseKey(TempKey);
   end
@@ -1960,7 +2038,7 @@ var
 begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
-    Result := GetValueDataStat(TempKey,ValueName,Value,Size,ValueType);
+    Result := GetValueData(TempKey,ValueName,Value,Size,ValueType);
   finally
     RegCloseKey(TempKey);
   end
@@ -1989,6 +2067,204 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TRegistryEx.ReadMacroOut(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroOut(const TypeName,KeyName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroOut(const TypeName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType);
+begin
+If not GetValueDataOut(GetWorkingKey(True),ValueName,Mem,Size,ValueType) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroOut(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueDataOut(TempKey,ValueName,Str,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroOut(const TypeName,KeyName,ValueName: String; out Str: WideString; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueDataOut(TempKey,ValueName,Str,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroOut(const TypeName,ValueName: String; out Str: WideString; ValueType: TRXValueType);
+begin
+If not GetValueDataOut(GetWorkingKey(True),ValueName,Str,ValueType) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.ReadMacroExtBuff(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroExtBuff(const TypeName,KeyName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacroExtBuff(const TypeName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType);
+begin
+If not GetValueDataExtBuff(GetWorkingKey(True),ValueName,Value,Size,ValueType) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.ReadMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueData(TempKey,ValueName,Value,Size,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacro(const TypeName,KeyName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType);
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
+  try
+    If not GetValueData(TempKey,ValueName,Value,Size,ValueType) then
+      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  finally
+    RegCloseKey(TempKey);
+  end
+else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fAuxOpenResult]);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.ReadMacro(const TypeName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType);
+begin
+If not GetValueData(GetWorkingKey(True),ValueName,Value,Size,ValueType) then
+  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReadMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Integer;
+var
+  Temp: DWORD;
+begin
+ReadMacro(TypeName,RootKey,KeyName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := Integer(Temp);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadMacro(const TypeName,KeyName,ValueName: String): Integer;
+var
+  Temp: DWORD;
+begin
+ReadMacro(TypeName,KeyName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := Integer(Temp);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReadMacro(const TypeName,ValueName: String): Integer;
+var
+  Temp: DWORD;
+begin
+ReadMacro(TypeName,ValueName,Temp,SizeOf(DWORD),vtDWord);
+Result := Integer(Temp);
+end;
+
+//------------------------------------------------------------------------------
+
 procedure TRegistryEx.Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights);
 begin
 fAccessRightsSys := TranslateAccessRights(AccessRights);;
@@ -1999,6 +2275,7 @@ fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
 fFlushOnClose := False;
 fAuxOpenResult := ERROR_SUCCESS;
+fAuxReadResult := ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -2057,6 +2334,20 @@ destructor TRegistryEx.Destroy;
 begin
 Finalize;
 inherited;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.DisablePredefinedCache(AllKeys: Boolean): Boolean;
+begin
+If AllKeys then
+  begin
+    If Assigned(RegDisablePredefinedCacheEx) then
+      Result := RegDisablePredefinedCacheEx = ERROR_SUCCESS
+    else
+      Result := False;
+  end
+else Result := RegDisablePredefinedCache = ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -2177,7 +2468,7 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean): Boolean;
+Function TRegistryEx.OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean = False): Boolean;
 var
   Created:  Boolean;
 begin
@@ -2186,7 +2477,7 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.OpenKey(const KeyName: String; CanCreate: Boolean): Boolean;
+Function TRegistryEx.OpenKey(const KeyName: String; CanCreate: Boolean = False): Boolean;
 var
   Created:  Boolean;
 begin
@@ -2303,16 +2594,58 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
+Function TRegistryEx.DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String; CanDeleteCurrentKey: Boolean; out CurrentKeyClosed: Boolean): Boolean;
+var
+  CurrentIsSubKey:  Boolean;
 begin
-Result := SHDeleteKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS;
+CurrentIsSubKey := (fCurrentKeyHandle <> 0) and ((RootKey = Self.RootKey) and IsSubKeyOf(fCurrentKeyName,TrimKeyName(KeyName)));
+If not CurrentIsSubKey or CanDeleteCurrentKey then
+  Result := SHDeleteKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS
+else
+  Result := False;
+CurrentKeyClosed := CurrentIsSubKey and CanDeleteCurrentKey;
+If Result and CurrentKeyClosed then
+  CloseKey;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.DeleteKey(const KeyName: String): Boolean;
+Function TRegistryEx.DeleteKey(const KeyName: String; CanDeleteCurrentKey: Boolean; out CurrentKeyClosed: Boolean): Boolean;
+var
+  WorkingKey:       HKEY;
+  WorkingKeyName:   String;
+  CurrentIsSubKey:  Boolean;
 begin
-Result := SHDeleteKeyW(GetWorkingKey(IsRelativeKeyName(KeyName)),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS;
+WorkingKey := GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName);
+CurrentIsSubKey := (fCurrentKeyHandle <> 0) and ((RootKey = Self.RootKey) and
+                   IsSubKeyOf(fCurrentKeyName,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName))));
+If not CurrentIsSubKey or CanDeleteCurrentKey then
+  Result := SHDeleteKeyW(WorkingKey,PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS
+else
+  Result := False;
+CurrentKeyClosed := CurrentIsSubKey and CanDeleteCurrentKey;
+If Result and CurrentKeyClosed then
+  CloseKey;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String; CanDeleteCurrentKey: Boolean = True): Boolean;
+var
+  Dummy: Boolean;
+begin
+Dummy := False;
+Result := DeleteKey(RootKey,KeyName,CanDeleteCurrentKey,Dummy);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.DeleteKey(const KeyName: String; CanDeleteCurrentKey: Boolean = True): Boolean;
+var
+  Dummy: Boolean;
+begin
+Dummy := False;
+Result := DeleteKey(KeyName,CanDeleteCurrentKey,Dummy);
 end;
 
 //------------------------------------------------------------------------------
@@ -3214,7 +3547,7 @@ end;
 
 procedure TRegistryEx.WriteBool(const ValueName: String; Value: Boolean);
 begin
-SetValueData(GetWorkingKey(True),ValueName,BoolToNum(Value));
+SetValueData('Bool',GetWorkingKey(True),ValueName,BoolToNum(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3235,7 +3568,7 @@ end;
 
 procedure TRegistryEx.WriteInt8(const ValueName: String; Value: Int8);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
+SetValueData('Int8',GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3256,7 +3589,7 @@ end;
 
 procedure TRegistryEx.WriteUInt8(const ValueName: String; Value: UInt8);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
+SetValueData('UInt8',GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3277,7 +3610,7 @@ end;
 
 procedure TRegistryEx.WriteInt16(const ValueName: String; Value: Int16); 
 begin
-SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
+SetValueData('Int16',GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3298,7 +3631,7 @@ end;
 
 procedure TRegistryEx.WriteUInt16(const ValueName: String; Value: UInt16); 
 begin
-SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
+SetValueData('UInt16',GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3319,7 +3652,7 @@ end;
 
 procedure TRegistryEx.WriteInt32(const ValueName: String; Value: Int32);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
+SetValueData('Int32',GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3340,7 +3673,7 @@ end;
 
 procedure TRegistryEx.WriteUInt32(const ValueName: String; Value: UInt32); 
 begin
-SetValueData(GetWorkingKey(True),ValueName,Integer(Value));
+SetValueData('UInt32',GetWorkingKey(True),ValueName,Integer(Value));
 end;
 
 //------------------------------------------------------------------------------
@@ -3361,7 +3694,7 @@ end;
 
 procedure TRegistryEx.WriteInt64(const ValueName: String; Value: Int64);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
+SetValueData('Int64',GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
@@ -3382,7 +3715,7 @@ end;
 
 procedure TRegistryEx.WriteUInt64(const ValueName: String; Value: UInt64);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
+SetValueData('UInt64',GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
@@ -3403,7 +3736,7 @@ end;
 
 procedure TRegistryEx.WriteInteger(const ValueName: String; Value: Integer);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Value);
+SetValueData('Integer',GetWorkingKey(True),ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
@@ -3424,7 +3757,7 @@ end;
 
 procedure TRegistryEx.WriteFloat32(const ValueName: String; Value: Float32);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
+SetValueData('Float32',GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -3445,28 +3778,28 @@ end;
 
 procedure TRegistryEx.WriteFloat64(const ValueName: String; Value: Float64);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
+SetValueData('Float64',GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Double);
 begin
-WriteFloat64(RootKey,KeyName,ValueName,Value);
+WriteMacro('Float',RootKey,KeyName,ValueName,Value,SizeOf(Double),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteFloat(const KeyName,ValueName: String; Value: Double);
 begin
-WriteFloat64(KeyName,ValueName,Value);
+WriteMacro('Float',KeyName,ValueName,Value,SizeOf(Double),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteFloat(const ValueName: String; Value: Double);
 begin
-WriteFloat64(ValueName,Value);
+SetValueData('Float',GetWorkingKey(True),ValueName,Value,SizeOf(Double),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -3487,70 +3820,88 @@ end;
 
 procedure TRegistryEx.WriteCurrency(const ValueName: String; Value: Currency);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
+SetValueData('Currency',GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
 end;
  
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime);
 begin
-WriteFloat64(RootKey,KeyName,ValueName,Value);
+WriteMacro('DateTime',RootKey,KeyName,ValueName,Value,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteDateTime(const KeyName,ValueName: String; Value: TDateTime);
 begin
-WriteFloat64(KeyName,ValueName,Value);
+WriteMacro('DateTime',KeyName,ValueName,Value,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteDateTime(const ValueName: String; Value: TDateTime);
 begin
-WriteFloat64(ValueName,Value);
+SetValueData('DateTime',GetWorkingKey(True),ValueName,Value,SizeOf(TDateTime),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime);
+var
+  Temp: TDateTime;
 begin
-WriteFloat64(RootKey,KeyName,ValueName,Int(Value));
+Temp := Int(Value);
+WriteMacro('Date',RootKey,KeyName,ValueName,Temp,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteDate(const KeyName,ValueName: String; Value: TDateTime);
+var
+  Temp: TDateTime;
 begin
-WriteFloat64(KeyName,ValueName,Int(Value));
+Temp := Int(Value);
+WriteMacro('Date',KeyName,ValueName,Temp,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteDate(const ValueName: String; Value: TDateTime);
+var
+  Temp: TDateTime;
 begin
-WriteFloat64(ValueName,Int(Value));
+Temp := Int(Value);
+SetValueData('Date',GetWorkingKey(True),ValueName,Temp,SizeOf(TDateTime),vtBinary);
 end;
  
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.WriteTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TDateTime);
+var
+  Temp: TDateTime;
 begin
-WriteFloat64(RootKey,KeyName,ValueName,Frac(Value));
+Temp := Frac(Value);
+WriteMacro('Time',RootKey,KeyName,ValueName,Temp,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteTime(const KeyName,ValueName: String; Value: TDateTime);
+var
+  Temp: TDateTime;
 begin
-WriteFloat64(KeyName,ValueName,Frac(Value));
+Temp := Frac(Value);
+WriteMacro('Time',KeyName,ValueName,Temp,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.WriteTime(const ValueName: String; Value: TDateTime);
+var
+  Temp: TDateTime;
 begin
-WriteFloat64(ValueName,Frac(Value));
+Temp := Frac(Value);
+SetValueData('Time',GetWorkingKey(True),ValueName,Temp,SizeOf(TDateTime),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -3580,7 +3931,7 @@ var
   Temp: WideString;
 begin
 Temp := StrToWide(Value);
-SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtString);
+SetValueData('String',GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtString);
 end;
  
 //------------------------------------------------------------------------------
@@ -3619,7 +3970,7 @@ If UnExpand then
   Temp := UnExpandString(Value)
 else
   Temp := StrToWide(Value);
-SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtExpandString);
+SetValueData('ExpandString',GetWorkingKey(True),ValueName,PWideChar(Temp)^,(Length(Temp) + 1) * SizeOf(WideChar),vtExpandString);
 end;
 
 //------------------------------------------------------------------------------
@@ -3649,7 +4000,7 @@ var
   Temp: WideString;
 begin
 Temp := UnParseMultiString(Value);
-SetValueData(GetWorkingKey(True),ValueName,PWideChar(Temp)^,Length(Temp) * SizeOf(WideChar),vtMultiString);
+SetValueData('MultiString',GetWorkingKey(True),ValueName,PWideChar(Temp)^,Length(Temp) * SizeOf(WideChar),vtMultiString);
 end;
 
 //------------------------------------------------------------------------------
@@ -3670,7 +4021,7 @@ end;
 
 procedure TRegistryEx.WriteBinaryBuffer(const ValueName: String; const Buff; Size: TMemSize);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Buff,Size,vtBinary);
+SetValueData('BinaryBuffer',GetWorkingKey(True),ValueName,Buff,Size,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -3691,7 +4042,7 @@ end;
 
 procedure TRegistryEx.WriteBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize);
 begin
-SetValueData(GetWorkingKey(True),ValueName,Memory^,Size,vtBinary);
+SetValueData('BinaryMemory',GetWorkingKey(True),ValueName,Memory^,Size,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -3736,7 +4087,7 @@ GetMem(Buffer,TMemSize(Count));
 try
   Stream.Seek(Position,soBeginning);
   Stream.ReadBuffer(Buffer^,Count);
-  SetValueData(GetWorkingKey(True),ValueName,Buffer^,TMemSize(Count),vtBinary);
+  SetValueData('BinaryStream',GetWorkingKey(True),ValueName,Buffer^,TMemSize(Count),vtBinary);
 finally
   FreeMem(Buffer,TMemSize(Count));
 end;
@@ -3783,7 +4134,7 @@ Function TRegistryEx.TryReadBool(const ValueName: String; out Value: Boolean): B
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := Temp <> 0;
 end;
 
@@ -3807,7 +4158,7 @@ Function TRegistryEx.TryReadInt8(const ValueName: String; out Value: Int8): Bool
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := Int8(Temp);
 end;
 
@@ -3831,7 +4182,7 @@ Function TRegistryEx.TryReadUInt8(const ValueName: String; out Value: UInt8): Bo
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := UInt8(Temp);
 end;
 
@@ -3855,7 +4206,7 @@ Function TRegistryEx.TryReadInt16(const ValueName: String; out Value: Int16): Bo
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := Int16(Temp);
 end;
 
@@ -3879,7 +4230,7 @@ Function TRegistryEx.TryReadUInt16(const ValueName: String; out Value: UInt16): 
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := UInt16(Temp);
 end;
 
@@ -3903,7 +4254,7 @@ Function TRegistryEx.TryReadInt32(const ValueName: String; out Value: Int32): Bo
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := Int32(Temp);
 end;
  
@@ -3927,7 +4278,7 @@ Function TRegistryEx.TryReadUInt32(const ValueName: String; out Value: UInt32): 
 var
   Temp: Integer;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Temp);
+Result := GetValueData(GetWorkingKey(True),ValueName,Temp);
 Value := UInt32(Temp);
 end;
 
@@ -3949,7 +4300,7 @@ end;
 
 Function TRegistryEx.TryReadInt64(const ValueName: String; out Value: Int64): Boolean;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
+Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
@@ -3970,7 +4321,7 @@ end;
 
 Function TRegistryEx.TryReadUInt64(const ValueName: String; out Value: UInt64): Boolean;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(UInt64),vtQWord);
+Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(UInt64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
@@ -3991,7 +4342,7 @@ end;
 
 Function TRegistryEx.TryReadInteger(const ValueName: String; out Value: Integer): Boolean;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value);
+Result := GetValueData(GetWorkingKey(True),ValueName,Value);
 end;
 
 //------------------------------------------------------------------------------
@@ -4012,7 +4363,7 @@ end;
 
 Function TRegistryEx.TryReadFloat32(const ValueName: String; out Value: Float32): Boolean;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
+Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float32),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -4033,7 +4384,7 @@ end;
 
 Function TRegistryEx.TryReadFloat64(const ValueName: String; out Value: Float64): Boolean;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
+Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Float64),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -4075,7 +4426,7 @@ end;
 
 Function TRegistryEx.TryReadCurrency(const ValueName: String; out Value: Currency): Boolean;
 begin
-Result := GetValueDataStat(GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
+Result := GetValueData(GetWorkingKey(True),ValueName,Value,SizeOf(Currency),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -4333,8 +4684,9 @@ var
 begin
 Result := TryReadMacroOut(RootKey,KeyName,ValueName,Buffer,Size,vtBinary);
 If Result then
-  begin
+  try
     Stream.WriteBuffer(Buffer^,LongInt(Size));
+  finally
     FreeMem(Buffer,Size);
   end;
 end;
@@ -4348,8 +4700,9 @@ var
 begin
 Result := TryReadMacroOut(KeyName,ValueName,Buffer,Size,vtBinary);
 If Result then
-  begin
+  try
     Stream.WriteBuffer(Buffer^,LongInt(Size));
+  finally
     FreeMem(Buffer,Size);
   end;
 end;
@@ -4363,8 +4716,9 @@ var
 begin
 Result := GetValueDataOut(GetWorkingKey(True),ValueName,Buffer,Size,vtBinary);
 If Result then
-  begin
+  try
     Stream.WriteBuffer(Buffer^,LongInt(Size));
+  finally
     FreeMem(Buffer,Size);
   end;
 end;
@@ -4829,480 +5183,456 @@ end;
 
 Function TRegistryEx.ReadBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean;
 begin
-If not TryReadBool(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value "%s".',[ValueName]);
+Result := ReadMacro('Bool',RootKey,KeyName,ValueName) <> 0;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBool(const KeyName,ValueName: String): Boolean;
 begin
-If not TryReadBool(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value "%s".',[ValueName]);
+Result := ReadMacro('Bool',KeyName,ValueName) <> 0;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBool(const ValueName: String): Boolean;
 begin
-If not TryReadBool(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBool: Error reading value "%s".',[ValueName]);
+Result := ReadMacro('Bool',ValueName) <> 0;
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int8;
 begin
-If not TryReadInt8(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
+Result := Int8(ReadMacro('Int8',RootKey,KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt8(const KeyName,ValueName: String): Int8;
 begin
-If not TryReadInt8(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
+Result := Int8(ReadMacro('Int8',KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt8(const ValueName: String): Int8;
 begin
-If not TryReadInt8(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
+Result := Int8(ReadMacro('Int8',ValueName));
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadUInt8(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt8;
 begin
-If not TryReadUInt8(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt8: Error reading value "%s".',[ValueName]);
+Result := UInt8(ReadMacro('UInt8',RootKey,KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt8(const KeyName,ValueName: String): UInt8;
 begin
-If not TryReadUInt8(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt8: Error reading value "%s".',[ValueName]);
+Result := UInt8(ReadMacro('UInt8',KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt8(const ValueName: String): UInt8;
 begin
-If not TryReadUInt8(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt8: Error reading value "%s".',[ValueName]);
+Result := UInt8(ReadMacro('UInt8',ValueName));
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int16;
 begin
-If not TryReadInt16(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value "%s".',[ValueName]);
+Result := Int16(ReadMacro('Int16',RootKey,KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt16(const KeyName,ValueName: String): Int16;
 begin
-If not TryReadInt16(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value "%s".',[ValueName]);
+Result := Int16(ReadMacro('Int16',KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt16(const ValueName: String): Int16;
 begin
-If not TryReadInt16(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt16: Error reading value "%s".',[ValueName]);
+Result := Int16(ReadMacro('Int16',ValueName));
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadUInt16(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt16;
 begin
-If not TryReadUInt16(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value "%s".',[ValueName]);
+Result := UInt16(ReadMacro('UInt16',RootKey,KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt16(const KeyName,ValueName: String): UInt16;
 begin
-If not TryReadUInt16(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value "%s".',[ValueName]);
+Result := UInt16(ReadMacro('UInt16',KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt16(const ValueName: String): UInt16;
 begin
-If not TryReadUInt16(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt16: Error reading value "%s".',[ValueName]);
+Result := UInt16(ReadMacro('UInt16',ValueName));
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int32;
 begin
-If not TryReadInt32(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value "%s".',[ValueName]);
+Result := Int32(ReadMacro('Int32',RootKey,KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt32(const KeyName,ValueName: String): Int32;
 begin
-If not TryReadInt32(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value "%s".',[ValueName]);
+Result := Int32(ReadMacro('Int32',KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt32(const ValueName: String): Int32;
 begin
-If not TryReadInt32(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt32: Error reading value "%s".',[ValueName]);
+Result := Int32(ReadMacro('Int32',ValueName));
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadUInt32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt32;
 begin
-If not TryReadUInt32(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value "%s".',[ValueName]);
+Result := UInt32(ReadMacro('UInt32',RootKey,KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt32(const KeyName,ValueName: String): UInt32;
 begin
-If not TryReadUInt32(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value "%s".',[ValueName]);
+Result := UInt32(ReadMacro('UInt32',KeyName,ValueName));
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt32(const ValueName: String): UInt32;
 begin
-If not TryReadUInt32(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt32: Error reading value "%s".',[ValueName]);
+Result := UInt32(ReadMacro('UInt32',ValueName));
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Int64;
 begin
-If not TryReadInt64(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value "%s".',[ValueName]);
+ReadMacro('Int64',RootKey,KeyName,ValueName,Result,SizeOf(Int64),vtQWord);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt64(const KeyName,ValueName: String): Int64;
 begin
-If not TryReadInt64(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value "%s".',[ValueName]);
+ReadMacro('Int64',KeyName,ValueName,Result,SizeOf(Int64),vtQWord);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInt64(const ValueName: String): Int64;
 begin
-If not TryReadInt64(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInt64: Error reading value "%s".',[ValueName]);
+ReadMacro('Int64',ValueName,Result,SizeOf(Int64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadUInt64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): UInt64;
 begin
-If not TryReadUInt64(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value "%s".',[ValueName]);
+ReadMacro('UInt64',RootKey,KeyName,ValueName,Result,SizeOf(UInt64),vtQWord);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt64(const KeyName,ValueName: String): UInt64;
 begin
-If not TryReadUInt64(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value "%s".',[ValueName]);
+ReadMacro('UInt64',KeyName,ValueName,Result,SizeOf(UInt64),vtQWord);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadUInt64(const ValueName: String): UInt64;
 begin
-If not TryReadUInt64(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadUInt64: Error reading value "%s".',[ValueName]);
+ReadMacro('UInt64',ValueName,Result,SizeOf(UInt64),vtQWord);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadInteger(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Integer;
 begin
-If not TryReadInteger(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value "%s".',[ValueName]);
+Result := ReadMacro('Integer',RootKey,KeyName,ValueName);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInteger(const KeyName,ValueName: String): Integer;
 begin
-If not TryReadInteger(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value "%s".',[ValueName]);
+Result := ReadMacro('Integer',KeyName,ValueName);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadInteger(const ValueName: String): Integer;
 begin
-If not TryReadInteger(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadInteger: Error reading value "%s".',[ValueName]);
+Result := ReadMacro('Integer',ValueName);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadFloat32(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Float32;
 begin
-If not TryReadFloat32(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value "%s".',[ValueName]);
+ReadMacro('Float32',RootKey,KeyName,ValueName,Result,SizeOf(Float32),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat32(const KeyName,ValueName: String): Float32;
 begin
-If not TryReadFloat32(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value "%s".',[ValueName]);
+ReadMacro('Float32',KeyName,ValueName,Result,SizeOf(Float32),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat32(const ValueName: String): Float32;
 begin
-If not TryReadFloat32(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat32: Error reading value "%s".',[ValueName]);
+ReadMacro('Float32',ValueName,Result,SizeOf(Float32),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadFloat64(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Float64;
 begin
-If not TryReadFloat64(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value "%s".',[ValueName]);
+ReadMacro('Float64',RootKey,KeyName,ValueName,Result,SizeOf(Float64),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat64(const KeyName,ValueName: String): Float64;
 begin
-If not TryReadFloat64(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value "%s".',[ValueName]);
+ReadMacro('Float64',KeyName,ValueName,Result,SizeOf(Float64),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat64(const ValueName: String): Float64;
 begin
-If not TryReadFloat64(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat64: Error reading value "%s".',[ValueName]);
+ReadMacro('Float64',ValueName,Result,SizeOf(Float64),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadFloat(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Double;
 begin
-If not TryReadFloat(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value "%s".',[ValueName]);
+ReadMacro('Float',RootKey,KeyName,ValueName,Result,SizeOf(Double),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat(const KeyName,ValueName: String): Double;
 begin
-If not TryReadFloat(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value "%s".',[ValueName]);
+ReadMacro('Float',KeyName,ValueName,Result,SizeOf(Double),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadFloat(const ValueName: String): Double;
 begin
-If not TryReadFloat(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadFloat: Error reading value "%s".',[ValueName]);
+ReadMacro('Float',ValueName,Result,SizeOf(Double),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadCurrency(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Currency;
 begin
-If not TryReadCurrency(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value "%s".',[ValueName]);
+ReadMacro('Currency',RootKey,KeyName,ValueName,Result,SizeOf(Currency),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadCurrency(const KeyName,ValueName: String): Currency;
 begin
-If not TryReadCurrency(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value "%s".',[ValueName]);
+ReadMacro('Currency',KeyName,ValueName,Result,SizeOf(Currency),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadCurrency(const ValueName: String): Currency;
 begin
-If not TryReadCurrency(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadCurrency: Error reading value "%s".',[ValueName]);
+ReadMacro('Currency',ValueName,Result,SizeOf(Currency),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadDateTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime;
 begin
-If not TryReadDateTime(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value "%s".',[ValueName]);
+ReadMacro('DateTime',RootKey,KeyName,ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDateTime(const KeyName,ValueName: String): TDateTime;
 begin
-If not TryReadDateTime(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value "%s".',[ValueName]);
+ReadMacro('DateTime',KeyName,ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDateTime(const ValueName: String): TDateTime;
 begin
-If not TryReadDateTime(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDateTime: Error reading value "%s".',[ValueName]);
+ReadMacro('DateTime',ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadDate(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime;
 begin
-If not TryReadDate(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value "%s".',[ValueName]);
+ReadMacro('Date',RootKey,KeyName,ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDate(const KeyName,ValueName: String): TDateTime;
 begin
-If not TryReadDate(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value "%s".',[ValueName]);
+ReadMacro('Date',KeyName,ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadDate(const ValueName: String): TDateTime;
 begin
-If not TryReadDate(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadDate: Error reading value "%s".',[ValueName]);
+ReadMacro('Date',ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadTime(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TDateTime;
 begin
-If not TryReadTime(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value "%s".',[ValueName]);
+ReadMacro('Time',RootKey,KeyName,ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadTime(const KeyName,ValueName: String): TDateTime;
 begin
-If not TryReadTime(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value "%s".',[ValueName]);
+ReadMacro('Time',KeyName,ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadTime(const ValueName: String): TDateTime;
 begin
-If not TryReadTime(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadTime: Error reading value "%s".',[ValueName]);
+ReadMacro('Time',ValueName,Result,SizeOf(TDateTime),vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): String;
+var
+  Temp: WideString;
 begin
-If not TryReadString(RootKey,KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('String',RootKey,KeyName,ValueName,Temp,vtString);
+Result := WideToStr(Temp);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadString(const KeyName,ValueName: String): String;
+var
+  Temp: WideString;
 begin
-If not TryReadString(KeyName,ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('String',KeyName,ValueName,Temp,vtString);
+Result := WideToStr(Temp);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadString(const ValueName: String): String;
+var
+  Temp: WideString;
 begin
-If not TryReadString(ValueName,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('String',ValueName,Temp,vtString);
+Result := WideToStr(Temp);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.ReadExpandString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Expand: Boolean = False): String;
+var
+  Temp: WideString;
 begin
-If not TryReadExpandString(RootKey,KeyName,ValueName,Result,Expand) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('ExpandString',RootKey,KeyName,ValueName,Temp,vtExpandString);
+If Expand then
+  Result := ExpandString(Temp)
+else
+  Result := WideToStr(Temp);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadExpandString(const KeyName,ValueName: String; Expand: Boolean = False): String;
+var
+  Temp: WideString;
 begin
-If not TryReadExpandString(KeyName,ValueName,Result,Expand) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('ExpandString',KeyName,ValueName,Temp,vtExpandString);
+If Expand then
+  Result := ExpandString(Temp)
+else
+  Result := WideToStr(Temp);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadExpandString(const ValueName: String; Expand: Boolean = False): String;
+var
+  Temp: WideString;
 begin
-If not TryReadExpandString(ValueName,Result,Expand) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadExpandString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('ExpandString',ValueName,Temp,vtExpandString);
+If Expand then
+  Result := ExpandString(Temp)
+else
+  Result := WideToStr(Temp);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.ReadMultiString(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: TStrings);
+var
+  Temp: WideString;
 begin
-If not TryReadMultiString(RootKey,KeyName,ValueName,Value) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('MultiString',RootKey,KeyName,ValueName,Temp,vtMultiString);
+ParseMultiString(Temp,Value);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.ReadMultiString(const KeyName,ValueName: String; Value: TStrings);
+var
+  Temp: WideString;
 begin
-If not TryReadMultiString(KeyName,ValueName,Value) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('MultiString',KeyName,ValueName,Temp,vtMultiString);
+ParseMultiString(Temp,Value);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.ReadMultiString(const ValueName: String; Value: TStrings);
+var
+  Temp: WideString;
 begin
-If not TryReadMultiString(ValueName,Value) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadMultiString: Error reading value "%s".',[ValueName]);
+ReadMacroOut('MultiString',ValueName,Temp,vtMultiString);
+ParseMultiString(Temp,Value);
 end;
 
 //------------------------------------------------------------------------------
@@ -5363,86 +5693,67 @@ end;
 
 Function TRegistryEx.ReadBinaryMemoryOut(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Memory: Pointer): TMemSize;
 begin
-If not TryReadBinaryMemoryOut(RootKey,KeyName,ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+ReadMacroOut('BinaryMemoryOut',RootKey,KeyName,ValueName,Memory,Result,vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBinaryMemoryOut(const KeyName,ValueName: String; out Memory: Pointer): TMemSize;
 begin
-If not TryReadBinaryMemoryOut(KeyName,ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+ReadMacroOut('BinaryMemoryOut',KeyName,ValueName,Memory,Result,vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.ReadBinaryMemoryOut(const ValueName: String; out Memory: Pointer): TMemSize;
 begin
-If not TryReadBinaryMemoryOut(ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+ReadMacroOut('BinaryMemoryOut',ValueName,Memory,Result,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.ReadBinaryStream(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Stream: TStream);
+var
+  Buffer: Pointer;
+  Size:   TMemSize;
 begin
-If not TryReadBinaryStream(RootKey,KeyName,ValueName,Stream) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value "%s".',[ValueName]);
+ReadMacroOut('BinaryStream',RootKey,KeyName,ValueName,Buffer,Size,vtBinary);
+try
+  Stream.WriteBuffer(Buffer^,LongInt(Size));
+finally
+  FreeMem(Buffer,Size);
+end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.ReadBinaryStream(const KeyName,ValueName: String; Stream: TStream);
+var
+  Buffer: Pointer;
+  Size:   TMemSize;
 begin
-If not TryReadBinaryStream(KeyName,ValueName,Stream) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value "%s".',[ValueName]);
+ReadMacroOut('BinaryStream',KeyName,ValueName,Buffer,Size,vtBinary);
+try
+  Stream.WriteBuffer(Buffer^,LongInt(Size));
+finally
+  FreeMem(Buffer,Size);
+end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 procedure TRegistryEx.ReadBinaryStream(const ValueName: String; Stream: TStream);
-begin
-If not TryReadBinaryStream(ValueName,Stream) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryStream: Error reading value "%s".',[ValueName]);
-end;
-
-(*
-Function TRegistryEx.CopyKey(const SrcKey, DestKey: String): Boolean;
 var
-  Source:       HKEY;
-  Destination:  HKEY;
+  Buffer: Pointer;
+  Size:   TMemSize;
 begin
-{$message 'reimplement - do not use SHCopyKeyW, it is recursive and might go into infinite cycle when copying into subnode'}
-Result := False;
-If KeyExists(SrcKey) and not KeyExists(DestKey) then
-  begin
-    CreateKey(DestKey);
-    Source := OpenKeyInternal(SrcKey,fAccessRightsSys);
-    Destination := OpenKeyInternal(DestKey,fAccessRightsSys);
-    If Source <> 0 then
-    try
-      If Destination <> 0 then
-      try
-        Result := SHCopyKeyW(Source,nil,Destination,0) = ERROR_SUCCESS;
-      finally
-        RegCloseKey(Destination);
-      end;
-    finally
-      RegCloseKey(Source);
-    end;
-  end;
+ReadMacroOut('BinaryStream',ValueName,Buffer,Size,vtBinary);
+try
+  Stream.WriteBuffer(Buffer^,LongInt(Size));
+finally
+  FreeMem(Buffer,Size);
 end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.MoveKey(const SrcKey, DestKey: String): Boolean;
-begin
-Result := False;
-If CopyKey(SrcKey,DestKey) then
-  Result := DeleteKey(SrcKey);
 end;
-*)
 
 
 {===============================================================================
@@ -5459,6 +5770,11 @@ procedure UnitInitialize;
 begin
 AdvApi32Handle := OpenAndCheckLibrary('advapi32.dll');
 {$IFNDEF CPU64bit}
+{
+  Functions Reg*ReflectionKey are always loaded on 64bit Windows. On 32bit
+  system, they are loaded only in Vista and newer or when running under WoW64
+  in Windows XP 64bit.
+}
 If IsWindowsVistaOrGreater or IsRunningUnderWoW64 then
 {$ENDIF}
   begin
@@ -5466,6 +5782,8 @@ If IsWindowsVistaOrGreater or IsRunningUnderWoW64 then
     RegEnableReflectionKey := GetAndCheckSymbolAddr(AdvApi32Handle,'RegEnableReflectionKey');
     RegDisableReflectionKey := GetAndCheckSymbolAddr(AdvApi32Handle,'RegDisableReflectionKey');
   end;
+If IsWindowsVistaOrGreater then
+  RegDisablePredefinedCacheEx := GetAndCheckSymbolAddr(AdvApi32Handle,'RegDisablePredefinedCacheEx');
 end;
 
 //------------------------------------------------------------------------------
