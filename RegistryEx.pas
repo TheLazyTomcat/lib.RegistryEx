@@ -323,6 +323,10 @@ type
     procedure DeleteSubKeys(Key: HKEY); overload; virtual;
     procedure DeleteValues(Key: HKEY); overload; virtual;
     //--- copy/move auxiliaty methods ---
+    procedure ListSubKeys(Key: HKEY; const ParentPath: String; List: TStrings); virtual;
+    Function MoveKey(SrcKey,DstKey: HKEY; SrcSubKeys: TStrings; CopySecurity: Boolean; DeleteSource: Boolean): Boolean; overload; virtual;
+    Function MoveKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean; virtual;
+    Function CopyKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean; virtual;
     Function MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean; overload; virtual;
     //--- data access methods and macros ---
     procedure SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
@@ -497,16 +501,19 @@ type
  {B}procedure DeleteContent(const KeyName: String); overload; virtual;
  {C}procedure DeleteContent; overload; virtual;
     //--- advanced keys and values manipulation ---
-    //Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKey: String; DestRootKey: TRXPredefinedKey; const DestKey: String): Boolean; overload; virtual;
-    Function CopyKey(const SrcKey, DestKey: String): Boolean; overload; virtual;
-  {
-    Note that MoveKey can be used to effectively rename a key.
-  }
-    //Function MoveKey(const SrcKey, DestKey: String): Boolean; virtual;
+
+    //Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String): Boolean; overload; virtual;
+    //Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String): Boolean; overload; virtual;
+    //Function CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String): Boolean; overload; virtual;
+    Function CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+    //Function CopyKeyTo(DstRootKey: TRXPredefinedKey; const DstKeyName: String): Boolean; overload; virtual;
+    //Function CopyKeyTo(const DstKeyName: String): Boolean; overload; virtual;
+    //Function CopyKeyFrom(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String): Boolean; overload; virtual;
+    //Function CopyKeyFrom(const SrcKeyName: String): Boolean; overload; virtual;
+
+    Function MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+
     //Function RenameKey(const OldName, NewName: String): Boolean; virtual;
-    //CopyTree
-    //MoveTree
-    {$message 'copy security descr'}
   {
     CopyValue copies value from one arbitrary key into another arbitrary key.
   }
@@ -946,6 +953,40 @@ type
 
 //------------------------------------------------------------------------------
 
+const
+  OWNER_SECURITY_INFORMATION               = $00000001;
+  GROUP_SECURITY_INFORMATION               = $00000002;
+  DACL_SECURITY_INFORMATION                = $00000004;
+//SACL_SECURITY_INFORMATION                = $00000008; // requires higher security provilege for the process
+  LABEL_SECURITY_INFORMATION               = $00000010;
+  ATTRIBUTE_SECURITY_INFORMATION           = $00000020;
+  SCOPE_SECURITY_INFORMATION               = $00000040;
+  PROCESS_TRUST_LABEL_SECURITY_INFORMATION = $00000080;
+  ACCESS_FILTER_SECURITY_INFORMATION       = $00000100;
+  BACKUP_SECURITY_INFORMATION              = $00010000;
+
+  PROTECTED_DACL_SECURITY_INFORMATION      = $80000000;
+  PROTECTED_SACL_SECURITY_INFORMATION      = $40000000;
+  UNPROTECTED_DACL_SECURITY_INFORMATION    = $20000000;
+  UNPROTECTED_SACL_SECURITY_INFORMATION    = $10000000;
+
+  SECINFO_NORMAL = OWNER_SECURITY_INFORMATION or
+                   GROUP_SECURITY_INFORMATION or
+                   DACL_SECURITY_INFORMATION  or
+                 //SACL_SECURITY_INFORMATION  or
+                   LABEL_SECURITY_INFORMATION or
+                   ATTRIBUTE_SECURITY_INFORMATION or
+                   SCOPE_SECURITY_INFORMATION or
+                   PROCESS_TRUST_LABEL_SECURITY_INFORMATION or
+                   ACCESS_FILTER_SECURITY_INFORMATION or
+                   BACKUP_SECURITY_INFORMATION or
+                   PROTECTED_DACL_SECURITY_INFORMATION or
+                   PROTECTED_SACL_SECURITY_INFORMATION or
+                   UNPROTECTED_DACL_SECURITY_INFORMATION or
+                   UNPROTECTED_SACL_SECURITY_INFORMATION;
+
+//------------------------------------------------------------------------------
+
 // statically linked functions
 Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
 
@@ -1358,6 +1399,26 @@ begin
 Result := PredefinedKeyToStr(TranslatePredefinedKey(PredefinedKey));
 end;
 
+//------------------------------------------------------------------------------
+
+Function SrcSecAccRights(CopySecurity: Boolean): DWORD;
+begin
+If CopySecurity then
+  Result := READ_CONTROL
+else
+  Result := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function DstSecAccRights(CopySecurity: Boolean): DWORD;
+begin
+If CopySecurity then
+  Result := WRITE_DAC or WRITE_OWNER
+else
+  Result := 0;
+end;
+
 
 {===============================================================================
     TRegistryEx - class declaration
@@ -1639,6 +1700,185 @@ try
 finally
   Values.Free;
 end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TRegistryEx.ListSubKeys(Key: HKEY; const ParentPath: String; List: TStrings);
+var
+  KeyInfo:  TRXKeyInfo;
+  i:        Integer;
+  Buffer:   WideString;
+  Len:      DWORD;
+  TempStr:  String;
+  SubKey:   HKEY;
+begin
+// do not clear the list, this function is called recursively
+If GetKeyInfo(Key,KeyInfo) then
+  begin
+    i := 0;
+    SetLength(Buffer,KeyInfo.MaxSubKeyLen + 1);
+    while True do
+      begin
+        Len := Length(Buffer);
+        case RegEnumKeyExW(Key,DWORD(i),PWideChar(Buffer),Len,nil,nil,nil,nil) of
+          ERROR_SUCCESS:
+            begin
+              // recurse
+              TempStr := WideToStr(Copy(Buffer,1,Len));
+              List.Add(ConcatKeyNames(ParentPath,TempStr));
+              If AuxOpenKey(Key,TempStr,KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SubKey) then
+                try
+                  ListSubKeys(SubKey,List[Pred(List.Count)],List);
+                finally
+                  RegCloseKey(SubKey);
+                end;
+            end;
+          ERROR_MORE_DATA:
+            begin
+              SetLength(Buffer,Length(Buffer) * 2);
+              Dec(i);
+            end;
+        else
+          Break{while};
+        end;
+        Inc(i);
+      end;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveKey(SrcKey,DstKey: HKEY; SrcSubKeys: TStrings; CopySecurity: Boolean; DeleteSource: Boolean): Boolean;
+
+  procedure MoveValues(FromKey,ToKey: HKEY);
+  var
+    ValuesList: TStringList;
+    i:          Integer;
+  begin
+    ValuesList := TStringList.Create;
+    try
+      GetValues(FromKey,ValuesList);
+      For i := 0 to Pred(ValuesList.Count) do
+        MoveValue(FromKey,ValuesList[i],ToKey,ValuesList[i],DeleteSource);
+    finally
+      ValuesList.Free;
+    end;
+  end;
+
+  procedure CopySecurityDescriptor(FromKey,ToKey: HKEY);
+  var
+    Buffer: Pointer;
+    Size:   DWORD;
+    a: TSecurityDescriptor;
+  begin
+    Size := 0;
+    If RegGetKeySecurity(FromKey,SECINFO_NORMAL,nil,Size) = ERROR_INSUFFICIENT_BUFFER then
+      begin
+        GetMem(Buffer,Size);
+        try
+          If RegGetKeySecurity(FromKey,SECINFO_NORMAL,Buffer,Size) = ERROR_SUCCESS then
+            RegSetKeySecurity(ToKey,SECINFO_NORMAL,Buffer);
+        finally
+          FreeMem(Buffer,Size);
+        end;
+      end;
+  end;
+
+var
+  i:          Integer;
+  TempKey:    HKEY;
+  CreatedKey: HKEY;
+begin
+CreatedKey := 0;
+Result := False;
+// create subkeys and copy values
+If CopySecurity then
+  CopySecurityDescriptor(SrcKey,DstKey);
+MoveValues(SrcKey,DstKey);
+For i := 0 to Pred(SrcSubKeys.Count) do
+  If AuxOpenKey(SrcKey,SrcSubKeys[i],SrcSecAccRights(CopySecurity) or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+    try
+      If RegCreateKeyExW(DstKey,PWideChar(StrToWide(SrcSubKeys[i])),0,nil,REG_OPTION_NON_VOLATILE,
+        DstSecAccRights(CopySecurity) or KEY_SET_VALUE,nil,CreatedKey,nil) = ERROR_SUCCESS then
+        try
+          If CopySecurity then
+            CopySecurityDescriptor(TempKey,CreatedKey);
+          MoveValues(TempKey,CreatedKey);
+        finally
+          RegCloseKey(CreatedKey);
+        end
+      else Exit;
+    finally
+      RegCloseKey(TempKey);
+    end
+  else Exit;
+// delete empty source keys (RegDeleteKeyW deletes only keys with no subkey)
+If DeleteSource then
+  For i := Pred(SrcSubKeys.Count) downto 0 do
+    RegDeleteKeyW(SrcKey,PWideChar(StrToWide(SrcSubKeys[i])));
+// if we are here, then all is good
+Result := True;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+  SrcSubKeys:     TStringList;
+begin
+DstKey := 0;
+Result := False;
+If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,SrcKey) then
+  try
+    SrcSubKeys := TStringList.Create;
+    try
+      ListSubKeys(SrcKey,'',SrcSubKeys);
+      If RegCreateKeyExW(DstBaseKey,PWideChar(StrToWide(DstSubKey)),0,nil,REG_OPTION_NON_VOLATILE,
+        DstSecAccRights(CopySecurity) or KEY_CREATE_SUB_KEY or KEY_SET_VALUE,nil,DstKey,nil) = ERROR_SUCCESS then
+        try
+          Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,True);
+        finally
+          RegCloseKey(DstKey);
+        end;
+    finally
+      SrcSubKeys.Free;
+    end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
+If Result then
+  RegDeleteKeyW(SrcBaseKey,PWideChar(StrToWide(SrcSubKey)));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.CopyKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean;
+var
+  SrcKey,DstKey:  HKEY;
+  SrcSubKeys:     TStringList;
+begin
+DstKey := 0;
+Result := False; 
+If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SrcKey) then
+  try
+    SrcSubKeys := TStringList.Create;
+    try
+      ListSubKeys(SrcKey,'',SrcSubKeys);
+      If RegCreateKeyExW(DstBaseKey,PWideChar(StrToWide(DstSubKey)),0,nil,REG_OPTION_NON_VOLATILE,
+        DstSecAccRights(CopySecurity) or KEY_CREATE_SUB_KEY or KEY_SET_VALUE,nil,DstKey,nil) = ERROR_SUCCESS then
+        try
+          Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,False);
+        finally
+          RegCloseKey(DstKey);
+        end;
+    finally
+      SrcSubKeys.Free;
+    end;
+  finally
+    RegCloseKey(SrcKey);
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -2371,6 +2611,7 @@ Function TRegistryEx.ConnectRegistry(const MachineName: String; RootKey: TRXPred
 var
   TempKey:  HKEY;
 begin
+TempKey := 0;
 Result := RegConnectRegistryW(PWideChar(StrToWide(MachineName)),TranslatePredefinedKey(RootKey),TempKey) = ERROR_SUCCESS;
 If Result then
   begin
@@ -3150,30 +3391,28 @@ DeleteSubKeys;
 DeleteValues;
 end;
 
-Function TRegistryEx.CopyKey(const SrcKey, DestKey: String): Boolean;
-var
-  Source:       HKEY;
-  Destination:  HKEY;
-begin
-{$message 'reimplement - do not use SHCopyKeyW, it is recursive and might go into infinite cycle when copying into subnode'}
-Result := False;
-If KeyExists(SrcKey) and not KeyExists(DestKey) then
-  begin
-    CreateKey(DestKey);
-    //Source := OpenKeyInternal(SrcKey,fAccessRightsSys);
-    //Destination := OpenKeyInternal(DestKey,fAccessRightsSys);
-    If AuxOpenKey(fCurrentKeyHandle,SrcKey,KEY_ALL_ACCESS,Source) then
-      try
-        If AuxOpenKey(fCurrentKeyHandle,DestKey,KEY_ALL_ACCESS,Destination) then
-          try
-            Result := SHCopyKeyW(Source,nil,Destination,0) = ERROR_SUCCESS;
-          finally
-            RegCloseKey(Destination);
-          end;
-      finally
-        RegCloseKey(Source);
-      end;
-  end;
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin 
+If KeyExists(SrcKeyName) and not KeyExists(DstKeyName) then
+  Result := CopyKeyMacro(
+    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin 
+If KeyExists(SrcKeyName) and not KeyExists(DstKeyName) then
+  Result := MoveKeyMacro(
+    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
 end;
 
 //------------------------------------------------------------------------------
