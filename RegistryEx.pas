@@ -300,7 +300,7 @@ type
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
     fAuxOpenResult:     Integer;  // system error code from last call to AuxOpenKey
-    fAuxReadResult:     Integer;  // system error code from last read macro
+    fAuxReadResult:     Integer;  // system error code from last value read (methods GetValueData*)
     //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
@@ -311,6 +311,8 @@ type
     procedure SetCurrentKeyReflection(Value: Boolean); virtual;
     Function GetCurrentKeyPath: String; virtual;
     //--- auxiliaty methods ---
+    Function AuxCreateKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY;
+      CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean; overload; virtual;
     Function AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
     procedure ChangeRootKey(KeyHandle: HKEY; Key: TRXPredefinedKey); virtual;
     procedure ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
@@ -323,7 +325,7 @@ type
     procedure DeleteSubKeys(Key: HKEY); overload; virtual;
     procedure DeleteValues(Key: HKEY); overload; virtual;
     //--- copy/move auxiliaty methods ---
-    procedure ListSubKeys(Key: HKEY; const ParentPath: String; List: TStrings); virtual;
+    Function ListSubKeys(Key: HKEY; List: TStrings; const ParentPath: String = ''): Boolean; virtual;
     Function MoveKey(SrcKey,DstKey: HKEY; SrcSubKeys: TStrings; CopySecurity: Boolean; DeleteSource: Boolean): Boolean; overload; virtual;
     Function MoveKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean; virtual;
     Function CopyKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean; virtual;
@@ -380,6 +382,10 @@ type
     destructor Destroy; override;
     //--- global registry functions ---
     Function DisablePredefinedCache(AllKeys: Boolean): Boolean; virtual;
+  {
+    ConnectRegistry only connects to a remote registry, proper access and
+    possible needed logon is not managed.
+  }
     Function ConnectRegistry(const MachineName: String; RootKey: TRXPredefinedKey): Boolean; virtual;
   {
     Behavioral classes of TRegistyEx public methods:
@@ -408,10 +414,10 @@ type
         Such functions are affecting only the current key, if any is open.
         If no current key is open, then they have no effect.
 
-    If no class is given, it usually means that the method does not operate on
-    any specific key.
     If more than one class is noted, then the method is operating on more than
     one key, and the order of noted classes matches order of parameters.
+    If no class is given, it usually means that the method does not operate on
+    any specific key.    
   }
   {
     OverridePredefinedKey maps specified predefined registry key to another
@@ -501,19 +507,21 @@ type
  {B}procedure DeleteContent(const KeyName: String); overload; virtual;
  {C}procedure DeleteContent; overload; virtual;
     //--- advanced keys and values manipulation ---
-
-    //Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String): Boolean; overload; virtual;
-    //Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String): Boolean; overload; virtual;
-    //Function CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String): Boolean; overload; virtual;
-    Function CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
-    //Function CopyKeyTo(DstRootKey: TRXPredefinedKey; const DstKeyName: String): Boolean; overload; virtual;
-    //Function CopyKeyTo(const DstKeyName: String): Boolean; overload; virtual;
-    //Function CopyKeyFrom(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String): Boolean; overload; virtual;
-    //Function CopyKeyFrom(const SrcKeyName: String): Boolean; overload; virtual;
-
-    Function MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
-
-    //Function RenameKey(const OldName, NewName: String): Boolean; virtual;
+{AA}Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{AB}Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{BA}Function CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{BB}Function CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{AA}Function MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{AB}Function MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{BA}Function MoveKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+{BB}Function MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+  {
+    RenameKey changes name of a key given by OldKeyName to NewKeyName. Since
+    there is no way of directly changing registry key name, it is instead
+    copied and the original is then deleted.
+  }
+ {A}Function RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String): Boolean; overload; virtual;
+ //{B}Function RenameKey(const OldKeyName,NewKeyName: String): Boolean; overload; virtual;
   {
     CopyValue copies value from one arbitrary key into another arbitrary key.
   }
@@ -555,9 +563,9 @@ type
     Afaik there is no way to directly rename a value, so it is instead copied
     to a new value with NewName and the original (OldName) is then deleted.
   }
- {A}Function RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldName,NewName: String): Boolean; overload; virtual;
- {B}Function RenameValue(const KeyName,OldName, NewName: String): Boolean; overload; virtual;
- {C}Function RenameValue(const OldName, NewName: String): Boolean; overload; virtual;
+ {A}Function RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldValueName,NewValueName: String): Boolean; overload; virtual;
+ {B}Function RenameValue(const KeyName,OldValueName,NewValueName: String): Boolean; overload; virtual;
+ {C}Function RenameValue(const OldValueName,NewValueName: String): Boolean; overload; virtual;
 
     //--- keys saving and loading ---
     ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
@@ -1521,6 +1529,15 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.AuxCreateKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY; CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean;
+begin
+NewKey := 0;
+Result := RegCreateKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,nil,
+  CreateOptions,AccessRights,nil,NewKey,Disposition) = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
 begin
 NewKey := 0;
@@ -1704,7 +1721,7 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.ListSubKeys(Key: HKEY; const ParentPath: String; List: TStrings);
+Function TRegistryEx.ListSubKeys(Key: HKEY; List: TStrings; const ParentPath: String = ''): Boolean;
 var
   KeyInfo:  TRXKeyInfo;
   i:        Integer;
@@ -1716,6 +1733,7 @@ begin
 // do not clear the list, this function is called recursively
 If GetKeyInfo(Key,KeyInfo) then
   begin
+    Result := True;
     i := 0;
     SetLength(Buffer,KeyInfo.MaxSubKeyLen + 1);
     while True do
@@ -1729,7 +1747,7 @@ If GetKeyInfo(Key,KeyInfo) then
               List.Add(ConcatKeyNames(ParentPath,TempStr));
               If AuxOpenKey(Key,TempStr,KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SubKey) then
                 try
-                  ListSubKeys(SubKey,List[Pred(List.Count)],List);
+                  ListSubKeys(SubKey,List,List[Pred(List.Count)]);
                 finally
                   RegCloseKey(SubKey);
                 end;
@@ -1739,46 +1757,55 @@ If GetKeyInfo(Key,KeyInfo) then
               SetLength(Buffer,Length(Buffer) * 2);
               Dec(i);
             end;
+          ERROR_NO_MORE_ITEMS:
+            Break{while};
         else
+          Result := False;
           Break{while};
         end;
         Inc(i);
       end;
-  end;
+  end
+else Result := False;
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.MoveKey(SrcKey,DstKey: HKEY; SrcSubKeys: TStrings; CopySecurity: Boolean; DeleteSource: Boolean): Boolean;
 
-  procedure MoveValues(FromKey,ToKey: HKEY);
+  Function MoveValues(FromKey,ToKey: HKEY): Boolean;
   var
     ValuesList: TStringList;
     i:          Integer;
   begin
+    Result := True;
     ValuesList := TStringList.Create;
     try
       GetValues(FromKey,ValuesList);
       For i := 0 to Pred(ValuesList.Count) do
-        MoveValue(FromKey,ValuesList[i],ToKey,ValuesList[i],DeleteSource);
+        If not MoveValue(FromKey,ValuesList[i],ToKey,ValuesList[i],DeleteSource) then
+          begin
+            Result := False;
+            Exit;
+          end;
     finally
       ValuesList.Free;
     end;
   end;
 
-  procedure CopySecurityDescriptor(FromKey,ToKey: HKEY);
+  Function CopySecurityDescriptor(FromKey,ToKey: HKEY): Boolean;
   var
     Buffer: Pointer;
     Size:   DWORD;
-    a: TSecurityDescriptor;
   begin
+    Result := False;
     Size := 0;
     If RegGetKeySecurity(FromKey,SECINFO_NORMAL,nil,Size) = ERROR_INSUFFICIENT_BUFFER then
       begin
         GetMem(Buffer,Size);
         try
           If RegGetKeySecurity(FromKey,SECINFO_NORMAL,Buffer,Size) = ERROR_SUCCESS then
-            RegSetKeySecurity(ToKey,SECINFO_NORMAL,Buffer);
+            Result := RegSetKeySecurity(ToKey,SECINFO_NORMAL,Buffer) = ERROR_SUCCESS;
         finally
           FreeMem(Buffer,Size);
         end;
@@ -1790,21 +1817,25 @@ var
   TempKey:    HKEY;
   CreatedKey: HKEY;
 begin
+{$message 'slow - do speed profile'}
 CreatedKey := 0;
 Result := False;
 // create subkeys and copy values
 If CopySecurity then
-  CopySecurityDescriptor(SrcKey,DstKey);
-MoveValues(SrcKey,DstKey);
+  If not CopySecurityDescriptor(SrcKey,DstKey) then
+    Exit;
+If not MoveValues(SrcKey,DstKey) then
+  Exit;
 For i := 0 to Pred(SrcSubKeys.Count) do
   If AuxOpenKey(SrcKey,SrcSubKeys[i],SrcSecAccRights(CopySecurity) or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
     try
-      If RegCreateKeyExW(DstKey,PWideChar(StrToWide(SrcSubKeys[i])),0,nil,REG_OPTION_NON_VOLATILE,
-        DstSecAccRights(CopySecurity) or KEY_SET_VALUE,nil,CreatedKey,nil) = ERROR_SUCCESS then
+      If AuxCreateKey(DstKey,SrcSubKeys[i],DstSecAccRights(CopySecurity) or KEY_SET_VALUE,CreatedKey) then
         try
           If CopySecurity then
-            CopySecurityDescriptor(TempKey,CreatedKey);
-          MoveValues(TempKey,CreatedKey);
+            If not CopySecurityDescriptor(TempKey,CreatedKey) then
+              Exit;
+          If not MoveValues(TempKey,CreatedKey) then
+            Exit;
         finally
           RegCloseKey(CreatedKey);
         end
@@ -1830,18 +1861,19 @@ var
 begin
 DstKey := 0;
 Result := False;
-If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,SrcKey) then
+If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or
+  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,SrcKey) then
   try
     SrcSubKeys := TStringList.Create;
     try
-      ListSubKeys(SrcKey,'',SrcSubKeys);
-      If RegCreateKeyExW(DstBaseKey,PWideChar(StrToWide(DstSubKey)),0,nil,REG_OPTION_NON_VOLATILE,
-        DstSecAccRights(CopySecurity) or KEY_CREATE_SUB_KEY or KEY_SET_VALUE,nil,DstKey,nil) = ERROR_SUCCESS then
-        try
-          Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,True);
-        finally
-          RegCloseKey(DstKey);
-        end;
+      If ListSubKeys(SrcKey,SrcSubKeys) then
+        If AuxCreateKey(DstBaseKEy,DstSubKey,DstSecAccRights(CopySecurity) or
+          KEY_CREATE_SUB_KEY or KEY_SET_VALUE,DstKey) then
+          try
+            Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,True);
+          finally
+            RegCloseKey(DstKey);
+          end;
     finally
       SrcSubKeys.Free;
     end;
@@ -1861,18 +1893,19 @@ var
 begin
 DstKey := 0;
 Result := False; 
-If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SrcKey) then
+If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or
+  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SrcKey) then
   try
     SrcSubKeys := TStringList.Create;
     try
-      ListSubKeys(SrcKey,'',SrcSubKeys);
-      If RegCreateKeyExW(DstBaseKey,PWideChar(StrToWide(DstSubKey)),0,nil,REG_OPTION_NON_VOLATILE,
-        DstSecAccRights(CopySecurity) or KEY_CREATE_SUB_KEY or KEY_SET_VALUE,nil,DstKey,nil) = ERROR_SUCCESS then
-        try
-          Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,False);
-        finally
-          RegCloseKey(DstKey);
-        end;
+      If ListSubKeys(SrcKey,SrcSubKeys) then
+        If AuxCreateKey(DstBaseKEy,DstSubKey,DstSecAccRights(CopySecurity) or
+          KEY_CREATE_SUB_KEY or KEY_SET_VALUE,DstKey) then
+          try
+            Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,False);
+          finally
+            RegCloseKey(DstKey);
+          end;
     finally
       SrcSubKeys.Free;
     end;
@@ -2678,10 +2711,8 @@ begin
 TempKey := 0;
 If CanCreate then
   begin
-    Result := RegCreateKeyExW(TranslatePredefinedKey(RootKey),
-                              PWideChar(StrToWide(TrimKeyName(KeyName))),
-                              0,nil,TranslateCreateOptions(CreateOptions),
-                              fAccessRightsSys,nil,TempKey,@Disposition) = ERROR_SUCCESS;
+    Result := AuxCreateKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
+      fAccessRightsSys,TempKey,TranslateCreateOptions(CreateOptions),@Disposition);
     case Disposition of
       REG_CREATED_NEW_KEY:      Created := True;
       REG_OPENED_EXISTING_KEY:  Created := False;
@@ -2691,9 +2722,7 @@ If CanCreate then
   end
 else
   begin
-    Result := RegOpenKeyExW(TranslatePredefinedKey(RootKey),
-                            PWideChar(StrToWide(TrimKeyName(KeyName))),
-                            0,fAccessRightsSys,TempKey) = ERROR_SUCCESS;
+    Result := AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),fAccessRightsSys,TempKey);
     Created := False;
   end;
 If Result then
@@ -2714,10 +2743,8 @@ begin
 TempKey := 0;
 If CanCreate then
   begin
-    Result := RegCreateKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
-                              PWideChar(StrToWide(TrimKeyName(KeyName))),
-                              0,nil,TranslateCreateOptions(CreateOptions),
-                              fAccessRightsSys,nil,TempKey,@Disposition) = ERROR_SUCCESS;
+    Result := AuxCreateKey(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),TrimKeyName(KeyName),
+      fAccessRightsSys,TempKey,TranslateCreateOptions(CreateOptions),@Disposition);
     case Disposition of
       REG_CREATED_NEW_KEY:      Created := True;
       REG_OPENED_EXISTING_KEY:  Created := False;
@@ -2727,9 +2754,8 @@ If CanCreate then
   end
 else
   begin
-    Result := RegOpenKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
-                            PWideChar(StrToWide(TrimKeyName(KeyName))),
-                            0,fAccessRightsSys,TempKey) = ERROR_SUCCESS;
+    Result := AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
+                         TrimKeyName(KeyName),fAccessRightsSys,TempKey);
     Created := False;
   end;
 If Result then
@@ -2764,9 +2790,7 @@ begin
 TempKey := 0;
 // preserve karWoW64_32Key and karWoW64_64Key from current access rights
 AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
-Result := RegOpenKeyExW(TranslatePredefinedKey(RootKey),
-                        PWideChar(StrToWide(TrimKeyName(KeyName))),
-                        0,AccessRightsTemp,TempKey) = ERROR_SUCCESS;
+Result := AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),AccessRightsTemp,TempKey);
 If Result then
   begin
     SetAccessRightsSys(AccessRightsTemp);
@@ -2785,9 +2809,8 @@ var
 begin
 TempKey := 0;
 AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
-Result := RegOpenKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
-                        PWideChar(StrToWide(TrimKeyName(KeyName))),
-                        0,AccessRightsTemp,TempKey) = ERROR_SUCCESS;
+Result := AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
+                     TrimKeyName(KeyName),AccessRightsTemp,TempKey);
 If Result then
   begin
     SetAccessRightsSys(AccessRightsTemp);
@@ -2832,10 +2855,8 @@ var
   TempKey:  HKEY;
 begin
 TempKey := 0;
-If RegCreateKeyExW(TranslatePredefinedKey(RootKey),
-                   PWideChar(StrToWide(TrimKeyName(KeyName))),0,nil,
-                   TranslateCreateOptions(CreateOptions),
-                   TranslateAccessRights(AccessRights),nil,TempKey,nil) = ERROR_SUCCESS then
+If AuxCreateKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
+  TranslateAccessRights(AccessRights),TempKey,TranslateCreateOptions(CreateOptions)) then
   begin
     RegCloseKey(TempKey);
     Result := True;
@@ -2850,10 +2871,8 @@ var
   TempKey:  HKEY;
 begin
 TempKey := 0;
-If RegCreateKeyExW(GetWorkingKey(IsRelativeKeyName(KeyName)),
-                   PWideChar(StrToWide(TrimKeyName(KeyName))),0,nil,
-                   TranslateCreateOptions(CreateOptions),
-                   TranslateAccessRights(AccessRights),nil,TempKey,nil) = ERROR_SUCCESS then
+If AuxCreateKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
+  TranslateAccessRights(AccessRights),TempKey,TranslateCreateOptions(CreateOptions)) then
   begin
     RegCloseKey(TempKey);
     Result := True;
@@ -3393,8 +3412,44 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+Function TRegistryEx.CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin
+If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
+  Result := CopyKeyMacro(
+    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 begin 
+If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstKeyName) then
+  Result := CopyKeyMacro(
+    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin 
+If KeyExists(SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
+  Result := CopyKeyMacro(
+    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin
 If KeyExists(SrcKeyName) and not KeyExists(DstKeyName) then
   Result := CopyKeyMacro(
     GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
@@ -3405,14 +3460,143 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+Function TRegistryEx.MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin
+If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
+  Result := MoveKeyMacro(
+    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 begin 
+If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstKeyName) then
+  Result := MoveKeyMacro(
+    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin 
+If KeyExists(SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
+  Result := MoveKeyMacro(
+    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
+else
+  Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+begin
 If KeyExists(SrcKeyName) and not KeyExists(DstKeyName) then
   Result := MoveKeyMacro(
     GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
     GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
 else
   Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function IsMultiLevelKeyPath(const KeyName: String): Boolean;
+var
+  i:  TStrOff;
+begin
+Result := False;
+For i := 1 to Length(KeyName) do
+  If KeyName[i] = REG_PATH_DELIMITER then
+    begin
+      Result := True;
+      Break{For i};
+    end;
+end;
+
+Function ExtractLowestKeyPathLevel(const KeyName: String): String;
+var
+  i:  TStrOff;
+begin
+If Length(KeyName) > 0 then
+  begin
+    i := Length(KeyName);
+    while i >= 1 do
+      begin
+        If KeyName[i] = REG_PATH_DELIMITER then
+          Break{while}
+        else
+          Dec(i);
+      end;
+    Result := Copy(KeyName,i + 1,Length(KeyName));
+  end
+else Result := '';
+end;
+
+Function RemoveLowestKeyPathLevel(const KeyName: String): String;
+var
+  i:  TStrOff;
+begin
+If Length(KeyName) > 0 then
+  begin
+    i := Length(KeyName);
+    while i >= 1 do
+      begin
+        If KeyName[i] = REG_PATH_DELIMITER then
+          Break{while}
+        else
+          Dec(i);
+      end;
+    If i > 0 then
+      Result := Copy(KeyName,1,i - 1)
+    else
+      Result := '';
+  end
+else Result := '';
+end;
+
+{
+  old, new - is multilevel path?
+
+  OLD or not(NEW)
+
+  old   new   ok
+  0     0     1
+  0     1     0
+  1     0     1
+  1     1     1
+}
+
+Function TRegistryEx.RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String): Boolean;
+var
+  OldKeyNameTrim: String;
+  NewKeyNameTrim: String;
+  OldMultiLevel:  Boolean;
+  NewMultiLevel:  Boolean;
+begin
+Result := False;
+OldKeyNameTrim := TrimKeyName(OldKeyName);
+NewKeyNameTrim := TrimKeyName(NewKeyName);
+If (Length(OldKeyNameTrim) > 0) and (Length(NewKeyNameTrim) > 0) then
+  begin
+    OldMultiLevel := IsMultiLevelKeyPath(OldKeyNameTrim);
+    NewMultiLevel := IsMultiLevelKeyPath(NewKeyNameTrim);
+    // if NewMultiLevel is true, then OldMultiLevel mut be too
+    If OldMultiLevel or not(NewMultiLevel) then
+      begin
+        If NewMultiLevel then
+          begin
+
+          end;
+      end;
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -3777,23 +3961,23 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldName,NewName: String): Boolean;
+Function TRegistryEx.RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldValueName,NewValueName: String): Boolean;
 begin
-Result := MoveValueIn(RootKey,KeyName,OldName,NewName);
+Result := MoveValueIn(RootKey,KeyName,OldValueName,NewValueName);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.RenameValue(const KeyName,OldName, NewName: String): Boolean;
+Function TRegistryEx.RenameValue(const KeyName,OldValueName,NewValueName: String): Boolean;
 begin
-Result := MoveValueIn(KeyName,OldName,NewName);
+Result := MoveValueIn(KeyName,OldValueName,NewValueName);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.RenameValue(const OldName, NewName: String): Boolean;
+Function TRegistryEx.RenameValue(const OldValueName,NewValueName: String): Boolean;
 begin
-Result := MoveValueIn(OldName,NewName);
+Result := MoveValueIn(OldValueName,NewValueName);
 end;
 
 //------------------------------------------------------------------------------
