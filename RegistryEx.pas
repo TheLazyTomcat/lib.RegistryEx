@@ -36,9 +36,12 @@ type
 
   ERXTimeConversionError = class(ERXException);
   ERXInvalidValue        = class(ERXException);
-  ERXInvalidKey          = class(ERXException);
-  ERXRegistryWriteError  = class(ERXException);
-  ERXRegistryReadError   = class(ERXException);
+
+  ERXRegistryError = class(ERXException);
+
+  ERXRegInvalidKey = class(ERXRegistryError);
+  ERXRegWriteError = class(ERXRegistryError);
+  ERXRegReadError  = class(ERXRegistryError);
 
 {===============================================================================
     System constants
@@ -209,6 +212,18 @@ const
   HKEY_DYN_DATA                    = HKEY($80000006);
   HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
 
+  // short aliases
+  HKCR = HKEY_CLASSES_ROOT;
+  HKCU = HKEY_CURRENT_USER;
+  HKLM = HKEY_LOCAL_MACHINE;
+  HKU  = HKEY_USERS;
+  HKPD = HKEY_PERFORMANCE_DATA;
+  HKPT = HKEY_PERFORMANCE_TEXT;
+  HKPN = HKEY_PERFORMANCE_NLSTEXT;
+  HKCC = HKEY_CURRENT_CONFIG;
+  HKDD = HKEY_DYN_DATA;
+  HKLS = HKEY_CURRENT_USER_LOCAL_SETTINGS;
+
 {===============================================================================
 --------------------------------------------------------------------------------
                                    TRegistryEx
@@ -299,21 +314,24 @@ type
     fCurrentKeyHandle:  HKEY;
     fCurrentKeyName:    String;
     fFlushOnClose:      Boolean;
-    fAuxOpenResult:     Integer;  // system error code from last call to AuxOpenKey
-    fAuxReadResult:     Integer;  // system error code from last value read (methods GetValueData*)
+    fLastSysError:      Integer;
     //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
     procedure SetRootKeyHandle(Value: HKEY); virtual;
     procedure SetRootKey(Value: TRXPredefinedKey); virtual;
     Function GetRootKeyString: String; virtual;
+    Function GetRootKeyShortString: String; virtual;
     Function GetCurrentKeyReflection: Boolean; virtual;
     procedure SetCurrentKeyReflection(Value: Boolean); virtual;
     Function GetCurrentKeyPath: String; virtual;
     //--- auxiliaty methods ---
-    Function AuxCreateKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY;
+    Function SetErrorCode(ErrorCode: Integer): Integer; virtual;
+    Function CheckErrorCode(ErrorCode: Integer; AllowMoreDataErr: Boolean = False): Boolean; virtual;
+    Function AuxCreateKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY;
       CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean; overload; virtual;
-    Function AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
+    Function AuxOpenKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
+    Function AuxCloseKey(Key: HKEY): Boolean; virtual;
     procedure ChangeRootKey(KeyHandle: HKEY; Key: TRXPredefinedKey); virtual;
     procedure ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
     Function GetWorkingKey(Relative: Boolean; out WorkingKeyName: String): HKEY; overload; virtual;
@@ -325,15 +343,12 @@ type
     procedure DeleteSubKeys(Key: HKEY); overload; virtual;
     procedure DeleteValues(Key: HKEY); overload; virtual;
     //--- copy/move auxiliaty methods ---
-    Function ListSubKeys(Key: HKEY; List: TStrings; const ParentPath: String = ''): Boolean; virtual;
-    Function MoveKey(SrcKey,DstKey: HKEY; SrcSubKeys: TStrings; CopySecurity: Boolean; DeleteSource: Boolean): Boolean; overload; virtual;
-    Function MoveKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean; virtual;
-    Function CopyKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean; virtual;
+    Function MoveKey(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity,DeleteSource: Boolean): Boolean; overload; virtual;
     Function MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean; overload; virtual;
     //--- data access methods and macros ---
     procedure SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; Data: Integer); overload; virtual;
-    procedure SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
+    Function TrySetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType): Boolean; virtual;
     procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure WriteMacro(const TypeName,KeyName,ValueName: String; const Value; Size: TMemSize; ValueType: TRXValueType); overload; virtual;
     procedure WriteMacro(const TypeName: String; RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Integer); overload; virtual;
@@ -375,12 +390,12 @@ type
   {
     If functions RegistryQuota* fail to obtain the number, they will return 0.
   }
-    class Function RegistryQuotaAllowed: UInt32; virtual;
-    class Function RegistryQuotaUsed: UInt32; virtual;
     constructor Create(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
     constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;  // root key is set to pkCurrentUser
     destructor Destroy; override;
     //--- global registry functions ---
+    Function RegistryQuotaAllowed: UInt32; virtual;
+    Function RegistryQuotaUsed: UInt32; virtual;
     Function DisablePredefinedCache(AllKeys: Boolean): Boolean; virtual;
   {
     ConnectRegistry only connects to a remote registry, proper access and
@@ -485,7 +500,8 @@ type
  {C}Function GetValueType(const ValueName: String): TRXValueType; overload; virtual;
   {
     GetValueDataSize will return 0 in case the value does not exist or cannot
-    be queried.
+    be queried. Note that 0 is a valid data size, so do not assume the function
+    have failed when it returned zero.
   }
  {A}Function GetValueDataSize(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): TMemSize; overload; virtual;
  {B}Function GetValueDataSize(const KeyName,ValueName: String): TMemSize; overload; virtual;
@@ -493,10 +509,19 @@ type
  {A}Function ValueExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
  {B}Function ValueExists(const KeyName,ValueName: String): Boolean; overload; virtual;
  {C}Function ValueExists(const ValueName: String): Boolean; overload; virtual;
+
+ {A}Function ValueOfTypeExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; ValueType: TRXValueType): Boolean; overload; virtual;
+ {B}Function ValueOfTypeExists(const KeyName,ValueName: String; ValueType: TRXValueType): Boolean; overload; virtual;
+ {C}Function ValueOfTypeExists(const ValueName: String; ValueType: TRXValueType): Boolean; overload; virtual;
+
  {A}Function DeleteValue(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
  {B}Function DeleteValue(const KeyName,ValueName: String): Boolean; overload; virtual;
  {C}Function DeleteValue(const ValueName: String): Boolean; overload; virtual;
     //--- content deletion ---
+  {
+    WARNING - DeleteSubKeys can delete current key without closing it, be
+              carefull what you are deleting.
+  }
  {A}procedure DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String); overload; virtual;
  {B}procedure DeleteSubKeys(const KeyName: String); overload; virtual;
  {C}procedure DeleteSubKeys; overload; virtual;
@@ -511,6 +536,10 @@ type
 {AB}Function CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {BA}Function CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {BB}Function CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+  {
+    WARNING - MoveKey can move the current key (effectively delting it).
+  }
+    {$message 'deal with current key'}
 {AA}Function MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {AB}Function MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {BA}Function MoveKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
@@ -577,7 +606,7 @@ type
     //--- values write ---
   {
     When writing to other key than current or predefined, the key must already
-    exist, otherwise an ERXInvalidKey exception is raised.
+    exist, otherwise an ERXRegInvalidKey exception is raised.
   }
  {A}procedure WriteBool(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Value: Boolean); overload; virtual;
  {B}procedure WriteBool(const KeyName,ValueName: String; Value: Boolean); overload; virtual;
@@ -908,6 +937,7 @@ type
     property RootKeyHandle: HKEY read fRootKeyHandle write SetRootKeyHandle;
     property RootKey: TRXPredefinedKey read fRootKey write SetRootKey;
     property RootKeyString: String read GetRootKeyString;
+    property RootKeyShortString: String read GetRootKeyShortString;
     property RemoteRootKey: Boolean read fRemoteRootKey;
     property CurrentKeyHandle: HKEY read fCurrentKeyHandle;
     property CurrentKeyName: String read fCurrentKeyName;
@@ -926,6 +956,7 @@ type
     Use this only when really needed, as it negatively affects performance.
   }
     property FlushOnClose: Boolean read fFlushOnClose write fFlushOnClose;
+    property LastSystemError: Integer read fLastSysError;
   end;
 
 implementation
@@ -965,7 +996,7 @@ const
   OWNER_SECURITY_INFORMATION               = $00000001;
   GROUP_SECURITY_INFORMATION               = $00000002;
   DACL_SECURITY_INFORMATION                = $00000004;
-//SACL_SECURITY_INFORMATION                = $00000008; // requires higher security provilege for the process
+//SACL_SECURITY_INFORMATION                = $00000008; // requires higher security privilege for the process
   LABEL_SECURITY_INFORMATION               = $00000010;
   ATTRIBUTE_SECURITY_INFORMATION           = $00000020;
   SCOPE_SECURITY_INFORMATION               = $00000040;
@@ -1013,15 +1044,13 @@ Function RegEnumValueW(
   lpcbData:       LPDWORD
 ): LSTATUS; stdcall; external 'advapi32.dll';
 
-Function SHRegDuplicateHKey(hkey: HKEY): HKEY; stdcall; external 'shlwapi.dll';
 Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'shlwapi.dll';
-Function SHCopyKeyW(hkeySrc: HKEY; pszSrcSubKey: LPCWSTR; hkeyDest: HKEY; fReserved: DWORD): LSTATUS; stdcall; external 'shlwapi.dll';
 
 Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
 
 //------------------------------------------------------------------------------
 
-// dynamically linked functions (might not be present on all systems (namely Windows XP)
+// dynamically linked functions (might not be present on all systems - namely Windows XP)
 var
   RegQueryReflectionKey:        Function(hBase: HKEY; bIsReflectionDisabled: PBOOL): LONG; stdcall = nil;
   RegEnableReflectionKey:       Function(hBase: HKEY): LONG; stdcall = nil;
@@ -1031,7 +1060,7 @@ var
 {===============================================================================
     TRegistryEx - internal functions
 ===============================================================================}
-
+{$message 'group internal functions'}
 {$IFDEF FPCDWM}{$PUSH}W5057{$ENDIF}
 Function FileTimeToDateTime(FileTime: TFileTime): TDateTime;
 var
@@ -1072,21 +1101,22 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function UnExpandString(const Str: String): WideString;
+Function WStrLen(const Str: WideString): TStrOff;
+var
+  i:  Integer;
+begin
+Result := 0;
+For i := 1 to Length(Str) do
+  If Str[i] = WideChar(#0) then
+    begin
+      Result := Pred(i);
+      Break{For i};
+    end;
+end;
 
-  Function WStrLen(const Str: WideString): TStrOff;
-  var
-    i:  Integer;
-  begin
-    Result := 0;
-    For i := 1 to Length(Str) do
-      If Str[i] = WideChar(#0) then
-        begin
-          Result := Pred(i);
-          Break{For i};
-        end;
-  end;
-  
+//------------------------------------------------------------------------------
+
+Function UnExpandString(const Str: String): WideString;
 var
   Temp: WideString;
 begin
@@ -1409,23 +1439,83 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function SrcSecAccRights(CopySecurity: Boolean): DWORD;
+Function PredefinedKeyToShortStr(PredefinedKey: HKEY): String; overload;
 begin
-If CopySecurity then
-  Result := READ_CONTROL
+case PredefinedKey of
+  HKEY_CLASSES_ROOT:                Result := 'HKCR';
+  HKEY_CURRENT_USER:                Result := 'HKCU';
+  HKEY_LOCAL_MACHINE:               Result := 'HKLM';
+  HKEY_USERS:                       Result := 'HKU';
+  HKEY_PERFORMANCE_DATA:            Result := 'HKPD';
+  HKEY_PERFORMANCE_TEXT:            Result := 'HKPT';
+  HKEY_PERFORMANCE_NLSTEXT:         Result := 'HKPN';
+  HKEY_CURRENT_CONFIG:              Result := 'HKCC';
+  HKEY_DYN_DATA:                    Result := 'HKDD';
+  HKEY_CURRENT_USER_LOCAL_SETTINGS: Result := 'HKLS';
 else
-  Result := 0;
+  Result := '';
+end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function PredefinedKeyToShortStr(PredefinedKey: TRXPredefinedKey): String; overload;
+begin
+Result := PredefinedKeyToShortStr(TranslatePredefinedKey(PredefinedKey));
 end;
 
 //------------------------------------------------------------------------------
 
-Function DstSecAccRights(CopySecurity: Boolean): DWORD;
+//------------------------------------------------------------------------------
+
+(*
+  HKEY_CLASSES_ROOT                = HKEY($80000000);
+  HKEY_CURRENT_USER                = HKEY($80000001);
+  HKEY_LOCAL_MACHINE               = HKEY($80000002);
+  HKEY_USERS                       = HKEY($80000003);
+  HKEY_PERFORMANCE_DATA            = HKEY($80000004);
+  HKEY_PERFORMANCE_TEXT            = HKEY($80000050);
+  HKEY_PERFORMANCE_NLSTEXT         = HKEY($80000060);
+  HKEY_CURRENT_CONFIG              = HKEY($80000005);
+  HKEY_DYN_DATA                    = HKEY($80000006);
+  HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
+
+HKEY_CLASSES_ROOT 
+HKEY_CURRENT_USER 
+HKEY_LOCAL_MACHINE 
+HKEY_USERS 
+
+*)
+
+Function IsUnOpenablePredefKey(Key: HKEY): Boolean;
 begin
-If CopySecurity then
-  Result := WRITE_DAC or WRITE_OWNER
+If (Key and $80000000) <> 0 then
+  Result := Byte(Key and $FF) in [4,5,6,7,$50,$60]
 else
-  Result := 0;
+  Result := False;
 end;
+
+Function IsPredefinedKey(Key: HKEY): Boolean;
+begin
+If (Key and $80000000) <> 0 then
+  Result := Byte(Key and $FF) in [0,1,2,3,4,5,6,7,$50,$60]
+else
+  Result := False;
+end;
+
+Function IsOpenablePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; overload;
+begin
+Result := PredefinedKey in [pkClassesRoot,pkCurrentUser,pkLocalMachine,pkUsers]
+end;
+
+Function IsOpenablePredefinedKey(PredefinedKey: HKEY): Boolean; overload;
+begin
+If IsPredefinedKey(PredefinedKey) then
+  Result := IsOpenablePredefinedKey(TranslatePredefinedKey(PredefinedKey))
+else
+  Result := False;
+end;
+
 
 
 {===============================================================================
@@ -1480,6 +1570,13 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.GetRootKeyShortString: String;
+begin
+Result := PredefinedKeyToShortStr(fRootKey);
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.GetCurrentKeyReflection: Boolean;
 var
   Value:  BOOL;
@@ -1488,14 +1585,22 @@ If fCurrentKeyHandle <> 0 then
   begin
     If Assigned(RegQueryReflectionKey) then
       begin
-        If RegQueryReflectionKey(fCurrentKeyHandle,@Value) = ERROR_SUCCESS then
+        If CheckErrorCode(RegQueryReflectionKey(fCurrentKeyHandle,@Value)) then
           Result := not Value // RegQueryReflectionKey indicates whether the reflection is DISABLED
         else
           Result := False;
       end
-    else Result := False;
+    else
+      begin
+        SetErrorCode(ERROR_CALL_NOT_IMPLEMENTED);
+        Result := False;
+      end;
   end
-else Result := False;
+else
+  begin
+    SetErrorCode(ERROR_INVALID_HANDLE);
+    Result := False;
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -1507,14 +1612,19 @@ If fCurrentKeyHandle <> 0 then
     If Value then
       begin
         If Assigned(RegEnableReflectionKey) then
-          RegEnableReflectionKey(fCurrentKeyHandle);
+          SetErrorCode(RegEnableReflectionKey(fCurrentKeyHandle))
+        else
+          SetErrorCode(ERROR_CALL_NOT_IMPLEMENTED);
       end
     else
       begin
         If Assigned(RegDisableReflectionKey) then
-          RegDisableReflectionKey(fCurrentKeyHandle)
+          SetErrorCode(RegDisableReflectionKey(fCurrentKeyHandle))
+        else
+          SetErrorCode(ERROR_CALL_NOT_IMPLEMENTED);
       end;
-  end;
+  end
+else SetErrorCode(ERROR_INVALID_HANDLE);
 end;
 
 //------------------------------------------------------------------------------
@@ -1529,20 +1639,63 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.AuxCreateKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY; CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean;
+Function TRegistryEx.SetErrorCode(ErrorCode: Integer): Integer;
 begin
-NewKey := 0;
-Result := RegCreateKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,nil,
-  CreateOptions,AccessRights,nil,NewKey,Disposition) = ERROR_SUCCESS;
+fLastSysError := ErrorCode;
+Result := ErrorCode;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.AuxOpenKey(RootKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
+Function TRegistryEx.CheckErrorCode(ErrorCode: Integer; AllowMoreDataErr: Boolean = False): Boolean;
+begin
+fLastSysError := ErrorCode;
+If AllowMoreDataErr then
+  Result := ErrorCode in [ERROR_SUCCESS,ERROR_MORE_DATA]
+else
+  Result := ErrorCode = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.AuxCreateKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY; CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean;
 begin
 NewKey := 0;
-fAuxOpenResult := RegOpenKeyExW(RootKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey);
-Result := fAuxOpenResult = ERROR_SUCCESS;
+Result := False;
+If Length(KeyName) > 0 then
+  Result := CheckErrorCode(RegCreateKeyExW(BaseKey,PWideChar(StrToWide(KeyName)),
+                           0,nil,CreateOptions,AccessRights,nil,NewKey,Disposition))
+else
+  SetErrorCode(ERROR_INVALID_PARAMETER);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.AuxOpenKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean;
+begin
+NewKey := 0;
+If Length(KeyName) > 0 then
+  Result := CheckErrorCode(RegOpenKeyExW(BaseKey,PWideChar(StrToWide(KeyName)),0,AccessRights,NewKey))
+else If IsPredefinedKey(BaseKey) then
+  begin
+    NewKey := BaseKey;
+    Result := True;
+  end
+else Result := CheckErrorCode(RegOpenKeyExW(BaseKey,nil,0,AccessRights,NewKey));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.AuxCloseKey(Key: HKEY): Boolean;
+begin
+{
+  Do not set fLastSysError here, AuxCloseKey is never a reason for failure of
+  method that is calling it.
+}
+If IsPredefinedKey(Key) then
+  Result := True
+else
+  Result := RegCloseKey(Key) = ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -1560,7 +1713,6 @@ end;
 
 procedure TRegistryEx.ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String);
 begin
-CloseKey;
 fCurrentKeyHandle := KeyHandle;
 fCurrentKeyName := KeyName;
 end;
@@ -1596,49 +1748,46 @@ Function TRegistryEx.GetKeyInfo(Key: HKEY; out KeyInfo: TRXKeyInfo): Boolean;
 var
   LastWriteTime:  TFileTime;
 begin
-Result := False;
 FillChar(Addr(KeyInfo)^,SizeOf(TRXKeyInfo),0);
-If RegQueryInfoKeyW(Key,nil,nil,nil,@KeyInfo.SubKeys,@KeyInfo.MaxSubKeyLen,
-                    @KeyInfo.MaxClassLen,@KeyInfo.Values,
-                    @KeyInfo.MaxValueNameLen,@KeyInfo.MaxValueLen,
-                    @KeyInfo.SecDescrBytes,@LastWriteTime) = ERROR_SUCCESS then
-  begin
-    KeyInfo.LastWriteTime := FileTimeToDateTime(LastWriteTime);
-    Result := True;
-  end;
+Result := CheckErrorCode(RegQueryInfoKeyW(Key,nil,nil,nil,
+             @KeyInfo.SubKeys,@KeyInfo.MaxSubKeyLen,@KeyInfo.MaxClassLen,
+             @KeyInfo.Values,@KeyInfo.MaxValueNameLen,@KeyInfo.MaxValueLen,
+             @KeyInfo.SecDescrBytes,@LastWriteTime));
+// convert time             
+If Result then
+  KeyInfo.LastWriteTime := FileTimeToDateTime(LastWriteTime);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.GetSubKeys(Key: HKEY; SubKeys: TStrings);
 var
-  KeyInfo:  TRXKeyInfo;
   i:        Integer;
   TempStr:  WideString;
   Len:      DWORD;
 begin
 SubKeys.Clear;
-If GetKeyInfo(Key,KeyInfo) then
+i := 0;
+SetLength(TempStr,255 + 1{terminating zero}); // limit for key name length
+while True do
   begin
-    i := 0;  
-    SetLength(TempStr,KeyInfo.MaxSubKeyLen + 1);
-    while True do
-      begin
-        Len := Length(TempStr);
-        case RegEnumKeyExW(Key,DWORD(i),PWideChar(TempStr),Len,nil,nil,nil,nil) of
-          ERROR_SUCCESS:
-            SubKeys.Add(WideToStr(Copy(TempStr,1,Len)));
-          ERROR_MORE_DATA:
-            begin
-              SetLength(TempStr,Length(TempStr) * 2);
-              Dec(i); // call RegEnumKeyExW again with the same index
-            end;
-        else
-         {ERROR_NO_MORE_ITEMS, or some other error}
-          Break{while};
+    Len := Length(TempStr);
+    case RegEnumKeyExW(Key,DWORD(i),PWideChar(TempStr),Len,nil,nil,nil,nil) of
+      ERROR_SUCCESS:
+        SubKeys.Add(WideToStr(Copy(TempStr,1,WStrLen(TempStr))));
+      ERROR_MORE_DATA:
+        begin
+          If Succ(Integer(Len)) > Length(TempStr) then
+            SetLength(TempStr,Len + 1)
+          else
+            SetLength(TempStr,Length(TempStr) * 2);
+          Dec(i); // call RegEnumKeyExW again with the same index
         end;
-        Inc(i);
-      end;
+    else
+     {ERROR_NO_MORE_ITEMS, or some other error}
+      Break{while};
+    end;
+    Inc(i);
   end;
 end;
 
@@ -1649,13 +1798,12 @@ var
   ValueType:  DWORD;
   DataSize:   DWORD;
 begin
-Result := False;
 FillChar(Addr(ValueInfo)^,SizeOf(TRXValueInfo),0);
-If RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@ValueType,nil,@DataSize) in [ERROR_SUCCESS,ERROR_MORE_DATA] then
+Result := CheckErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@ValueType,nil,@DataSize),True);
+If Result then
   begin
     ValueInfo.ValueType := TranslateValueType(ValueType);
     ValueInfo.DataSize := TMemSize(DataSize);
-    Result := True;
   end;
 end;
 
@@ -1669,14 +1817,14 @@ var
 begin
 Values.Clear;
 i := 0;
-SetLength(TempStr,16383); // limit for a value name length
+SetLength(TempStr,16383 + 1); // limit for a value name length
 while True do
   begin
     Len := Length(TempStr);
     case RegEnumValueW(Key,DWORD(i),PWideChar(TempStr),@Len,nil,nil,nil,nil) of
       ERROR_SUCCESS,
       ERROR_MORE_DATA:
-        Values.Add(WideToStr(Copy(TempStr,1,Len)));
+        Values.Add(WideToStr(Copy(TempStr,1,WStrLen(TempStr))));
     else
      {ERROR_NO_MORE_ITEMS, other errors}
       Break{while};
@@ -1694,6 +1842,7 @@ var
 begin
 SubKeys := TStringList.Create;
 try
+  {$message 'deal with current key'}
   GetSubKeys(Key,SubKeys);
   For i := 0 to Pred(SubKeys.Count) do
     SHDeleteKeyW(Key,PWideChar(StrToWide(SubKeys[i])))
@@ -1721,25 +1870,44 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.ListSubKeys(Key: HKEY; List: TStrings; const ParentPath: String = ''): Boolean;
-var
-  KeyInfo:  TRXKeyInfo;
-  i:        Integer;
-  Buffer:   WideString;
-  Len:      DWORD;
-  TempStr:  String;
-  SubKey:   HKEY;
-begin
-// do not clear the list, this function is called recursively
-If GetKeyInfo(Key,KeyInfo) then
+Function TRegistryEx.MoveKey(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity,DeleteSource: Boolean): Boolean;
+
+  Function SrcSecAccRights: DWORD;
   begin
-    Result := True;
+    If CopySecurity then
+      Result := READ_CONTROL
+    else
+      Result := 0;
+  end;
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+  Function DstSecAccRights: DWORD;
+    begin
+    If CopySecurity then
+      Result := WRITE_DAC or WRITE_OWNER
+    else
+      Result := 0;
+  end;
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+  Function ListSubKeys(Key: HKEY; List: TStrings; const ParentPath: String = ''): Boolean;
+  var
+    i:        Integer;
+    Buffer:   WideString;
+    Len:      DWORD;
+    TempStr:  String;
+    SubKey:   HKEY;
+  begin
+    // do not clear the list, this function is called recursively
+    Result := False;
     i := 0;
-    SetLength(Buffer,KeyInfo.MaxSubKeyLen + 1);
+    SetLength(Buffer,255 + 1);
     while True do
       begin
         Len := Length(Buffer);
-        case RegEnumKeyExW(Key,DWORD(i),PWideChar(Buffer),Len,nil,nil,nil,nil) of
+        case SetErrorCode(RegEnumKeyExW(Key,DWORD(i),PWideChar(Buffer),Len,nil,nil,nil,nil)) of
           ERROR_SUCCESS:
             begin
               // recurse
@@ -1747,10 +1915,12 @@ If GetKeyInfo(Key,KeyInfo) then
               List.Add(ConcatKeyNames(ParentPath,TempStr));
               If AuxOpenKey(Key,TempStr,KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SubKey) then
                 try
-                  ListSubKeys(SubKey,List,List[Pred(List.Count)]);
+                  If not ListSubKeys(SubKey,List,List[Pred(List.Count)]) then
+                    Break{while};
                 finally
-                  RegCloseKey(SubKey);
-                end;
+                  AuxCloseKey(SubKey);
+                end
+              else Break{while};
             end;
           ERROR_MORE_DATA:
             begin
@@ -1758,160 +1928,293 @@ If GetKeyInfo(Key,KeyInfo) then
               Dec(i);
             end;
           ERROR_NO_MORE_ITEMS:
-            Break{while};
+            begin
+              Result := True;
+              Break{while};
+            end;
         else
-          Result := False;
           Break{while};
         end;
         Inc(i);
       end;
-  end
-else Result := False;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.MoveKey(SrcKey,DstKey: HKEY; SrcSubKeys: TStrings; CopySecurity: Boolean; DeleteSource: Boolean): Boolean;
-
-  Function MoveValues(FromKey,ToKey: HKEY): Boolean;
-  var
-    ValuesList: TStringList;
-    i:          Integer;
-  begin
-    Result := True;
-    ValuesList := TStringList.Create;
-    try
-      GetValues(FromKey,ValuesList);
-      For i := 0 to Pred(ValuesList.Count) do
-        If not MoveValue(FromKey,ValuesList[i],ToKey,ValuesList[i],DeleteSource) then
-          begin
-            Result := False;
-            Exit;
-          end;
-    finally
-      ValuesList.Free;
-    end;
   end;
 
-  Function CopySecurityDescriptor(FromKey,ToKey: HKEY): Boolean;
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+  Function HasSubKeysInternal(Key: HKEY; out ItHas: Boolean): Boolean;
   var
-    Buffer: Pointer;
-    Size:   DWORD;
+    SubKeyCount:  DWORD;
+  begin
+    Result := CheckErrorCode(RegQueryInfoKeyW(Key,nil,nil,nil,@SubKeyCount,nil,nil,nil,nil,nil,nil,nil));
+    If Result then
+      ItHas := SubKeyCount > 0;
+  end;
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+var
+  SrcSubKeys: TStringList;  // used in MoveKeyInternal
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+  // called only once, it is here only to simplify implementation
+  Function MoveKeyInternal(SrcKey,DstKey: HKEY): Boolean;
+  const
+    PREALLOC_BUFF_SIZE = 8 * 1024;  // 8KiB
+  var
+    PreallocatedBuffer: Pointer;
+
+  //  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+    Function MoveValues(FromKey,ToKey: HKEY): Boolean;
+    var
+      i:        Integer;
+      TempStr:  WideString;
+      Len:      DWORD;
+      ValName:  WideString;
+      ValType:  DWORD;
+      ValSize:  DWORD;
+      ValData:  Pointer;
+      BuffSize: TMemSize;
+    begin
+      Result := False;
+      i := 0;
+      SetLength(TempStr,16383 + 1);
+      while True do
+        begin
+          Len := Length(TempStr);
+          ValSize := PREALLOC_BUFF_SIZE;
+          case SetErrorCode(RegEnumValueW(FromKey,DWORD(i),PWideChar(TempStr),@Len,
+                            nil,@ValType,PreallocatedBuffer,@ValSize)) of
+            ERROR_MORE_DATA:
+              begin
+                // data cannot fir into preallocated buffer
+                ValName := Copy(TempStr,1,WStrLen(TempStr));
+              {
+                Aaand since ValSize might not actually contain required size
+                (HKEY_PERFORMANCE_DATA)...
+              }
+                If ValSize <= PREALLOC_BUFF_SIZE then
+                  begin
+                    // ...this bullshit begins
+                    BuffSize := PREALLOC_BUFF_SIZE * 2;
+                    GetMem(ValData,Buffsize);
+                    try
+                      while True do
+                        begin
+                          ValSize := DWORD(BuffSize);                        
+                          case SetErrorCode(RegQueryValueExW(FromKey,PWideChar(ValName),
+                                            nil,nil,ValData,@ValSize)) of
+                            ERROR_MORE_DATA:
+                              begin
+                                // no need to preserve data, do not use ReallocMem
+                                FreeMem(ValData,BuffSize);
+                                BuffSize := BuffSize * 2;
+                                GetMem(ValData,BuffSize);
+                              end;
+                            ERROR_SUCCESS:
+                              begin
+                                If not CheckErrorCode(RegSetValueExW(ToKey,
+                                  PWideChar(ValName),0,ValType,ValData,ValSize)) then
+                                  Exit;
+                                If DeleteSource then
+                                  If not CheckErrorCode(RegDeleteValueW(FromKey,
+                                    PWideChar(ValName))) then
+                                    Exit;
+                                Break{inner while};
+                              end;
+                          else
+                            Exit; // Break will not suffice here (nested loop)
+                          end;
+                        end;
+                    finally
+                      FreeMem(ValData,BuffSize);
+                    end;
+                  end
+                else
+                  begin
+                    // ValSize seems to be set properly
+                    GetMem(ValData,ValSize);
+                    try
+                      If CheckErrorCode(RegQueryValueExW(FromKey,PWideChar(ValName),
+                        nil,nil,ValData,@ValSize)) then
+                        begin
+                          If not CheckErrorCode(RegSetValueExW(ToKey,PWideChar(ValName),
+                            0,ValType,ValData,ValSize)) then
+                            Break{while};
+                        end
+                      else Break{while};
+                    finally
+                      FreeMem(ValData,ValSize);
+                    end;                  
+                  end;
+              end;
+            ERROR_SUCCESS:
+              begin
+                // data fit into preallocated buffer
+                ValName := Copy(TempStr,1,WStrLen(TempStr));
+                If not CheckErrorCode(RegSetValueExW(ToKey,PWideChar(ValName),0,
+                                      ValType,PreallocatedBuffer,ValSize)) then
+                  Break{while};
+                If DeleteSource then
+                  If not CheckErrorCode(RegDeleteValueW(FromKey,PWideChar(ValName))) then
+                    Break{while};
+              end;
+            ERROR_NO_MORE_ITEMS:
+              begin
+                // no more values present in the source key
+                Result := True;
+                Break{while};
+              end;              
+          else
+            // other errors
+            Break{while};
+          end;
+          Inc(i);
+        end;
+    end;
+
+  //  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+    Function CopySecurityDescriptor(FromKey,ToKey: HKEY): Boolean;
+    var
+      Buffer: Pointer;
+      Size:   DWORD;
+    begin
+      Result := False;
+      Size := PREALLOC_BUFF_SIZE;
+      case SetErrorCode(RegGetKeySecurity(FromKey,SECINFO_NORMAL,PreallocatedBuffer,Size)) of
+        ERROR_INSUFFICIENT_BUFFER:
+          begin
+            GetMem(Buffer,Size);
+            try
+              If CheckErrorCode(RegGetKeySecurity(FromKey,SECINFO_NORMAL,Buffer,Size)) then
+                Result := CheckErrorCode(RegSetKeySecurity(ToKey,SECINFO_NORMAL,Buffer));
+            finally
+              FreeMem(Buffer,Size);
+            end;
+          end;
+        ERROR_SUCCESS:
+          Result := CheckErrorCode(RegSetKeySecurity(ToKey,SECINFO_NORMAL,PreallocatedBuffer));
+        // other values are treated as fail-worthy errors    
+      end;
+    end;
+    
+  //  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+  var
+    i:              Integer;
+    SrcWorkKey:     HKEY;
+    DstWorkKey:     HKEY;
+    SrcHasSubKeys:  Boolean;
   begin
     Result := False;
-    Size := 0;
-    If RegGetKeySecurity(FromKey,SECINFO_NORMAL,nil,Size) = ERROR_INSUFFICIENT_BUFFER then
-      begin
-        GetMem(Buffer,Size);
-        try
-          If RegGetKeySecurity(FromKey,SECINFO_NORMAL,Buffer,Size) = ERROR_SUCCESS then
-            Result := RegSetKeySecurity(ToKey,SECINFO_NORMAL,Buffer) = ERROR_SUCCESS;
-        finally
-          FreeMem(Buffer,Size);
-        end;
+    GetMem(PreallocatedBuffer,PREALLOC_BUFF_SIZE);
+    try
+      // copy values and security desciptor of base key
+      If not MoveValues(SrcKey,DstKey) then
+        Exit;
+      If CopySecurity then
+        If not CopySecurityDescriptor(SrcKey,DstKey) then
+          Exit;
+      // re-create the source key tree and copy values and sec. descriptors
+      For i := 0 to Pred(SrcSubKeys.Count) do
+        SrcSubKeys.Objects[i] := nil;
+      try
+        For i := 0 to Pred(SrcSubKeys.Count) do
+          If AuxOpenKey(SrcKey,SrcSubKeys[i],SrcSecAccRights or KEY_QUERY_VALUE or KEY_SET_VALUE,SrcWorkKey) then
+            begin
+              SrcSubKeys.Objects[i] := TObject(SrcWorkKey);  // nasty hack :-X
+              If AuxCreateKey(DstKey,SrcSubKeys[i],DstSecAccRights or KEY_SET_VALUE,DstWorkKey) then
+                try
+                  // no need to check creation
+                  If not MoveValues(SrcWorkKey,DstWorkKey) then
+                    Exit;
+                  If CopySecurity then
+                    If not CopySecurityDescriptor(SrcWorkKey,DstWorkKey) then
+                      Exit;
+                finally
+                  AuxCloseKey(DstWorkKey);
+                end
+              else Exit;
+              // do not close source key now
+            end
+          else Exit;
+        // delete empty source keys
+        If DeleteSource then
+          For i := Pred(SrcSubKeys.Count) downto 0 do
+            If HasSubKeysInternal(HKEY(SrcSubKeys.Objects[i]),SrcHasSubKeys) then
+              begin
+                If not SrcHasSubKeys then
+                  If not CheckErrorCode(RegDeleteKeyW(SrcKey,PWideChar(StrToWide(SrcSubKeys[i])))) then
+                    Exit;
+              end
+            else Exit;
+        // if we are here, then all is good
+      finally
+        For i := 0 to Pred(SrcSubKeys.Count) do
+          If Assigned(SrcSubKeys.Objects[i]) then
+            AuxCloseKey(HKEY(SrcSubKeys.Objects[i]))
       end;
+      Result := True;
+    finally
+      FreeMem(PreallocatedBuffer,PREALLOC_BUFF_SIZE);
+    end;
   end;
 
-var
-  i:          Integer;
-  TempKey:    HKEY;
-  CreatedKey: HKEY;
-begin
-{$message 'slow - do speed profile'}
-CreatedKey := 0;
-Result := False;
-// create subkeys and copy values
-If CopySecurity then
-  If not CopySecurityDescriptor(SrcKey,DstKey) then
-    Exit;
-If not MoveValues(SrcKey,DstKey) then
-  Exit;
-For i := 0 to Pred(SrcSubKeys.Count) do
-  If AuxOpenKey(SrcKey,SrcSubKeys[i],SrcSecAccRights(CopySecurity) or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
-    try
-      If AuxCreateKey(DstKey,SrcSubKeys[i],DstSecAccRights(CopySecurity) or KEY_SET_VALUE,CreatedKey) then
-        try
-          If CopySecurity then
-            If not CopySecurityDescriptor(TempKey,CreatedKey) then
-              Exit;
-          If not MoveValues(TempKey,CreatedKey) then
-            Exit;
-        finally
-          RegCloseKey(CreatedKey);
-        end
-      else Exit;
-    finally
-      RegCloseKey(TempKey);
-    end
-  else Exit;
-// delete empty source keys (RegDeleteKeyW deletes only keys with no subkey)
-If DeleteSource then
-  For i := Pred(SrcSubKeys.Count) downto 0 do
-    RegDeleteKeyW(SrcKey,PWideChar(StrToWide(SrcSubKeys[i])));
-// if we are here, then all is good
-Result := True;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.MoveKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean;
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
 var
   SrcKey,DstKey:  HKEY;
-  SrcSubKeys:     TStringList;
+  Disposition:    DWORD;
+  SrcHasSubKeys:  Boolean;
 begin
+{
+  Why all this complexity?
+  Because recursive approach will cause infinite loop when copying source key
+  into its own subkey (eg. key_1 into key_1\key_copy).
+}
 DstKey := 0;
 Result := False;
-If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or
-  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,SrcKey) then
+// open source key
+If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights or KEY_ENUMERATE_SUB_KEYS or
+  KEY_QUERY_VALUE or KEY_SET_VALUE,SrcKey) then
   try
     SrcSubKeys := TStringList.Create;
     try
+      // list complete subkey tree of the source
       If ListSubKeys(SrcKey,SrcSubKeys) then
-        If AuxCreateKey(DstBaseKEy,DstSubKey,DstSecAccRights(CopySecurity) or
-          KEY_CREATE_SUB_KEY or KEY_SET_VALUE,DstKey) then
+        // create destination key
+        If AuxCreateKey(DstBaseKey,DstSubKey,DstSecAccRights or KEY_CREATE_SUB_KEY or
+          KEY_SET_VALUE,DstKey,REG_OPTION_NON_VOLATILE,@Disposition) then
           try
-            Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,True);
+            // check whether the destination key was created and not only opened
+            case Disposition of
+              REG_CREATED_NEW_KEY:
+                // destination key was created
+                Result := MoveKeyInternal(SrcKey,DstKey);
+              REG_OPENED_EXISTING_KEY:
+                // destination key existed and was only opened
+                SetErrorCode(ERROR_ALREADY_EXISTS);
+            else
+              // some erroneous result
+              SetErrorCode(ERROR_INVALID_DATA);
+            end;
+            // delete destination key in case something went wrong
+            If not Result then
+              SHDeleteKeyW(DstBaseKey,PWideChar(StrToWide(DstSubKey)));
           finally
-            RegCloseKey(DstKey);
+            AuxCloseKey(DstKey);
           end;
     finally
       SrcSubKeys.Free;
     end;
+    // see if the source still has subkeys (possible only when moving source into itself)
+    If Result then
+      Result := HasSubKeysInternal(SrcKey,SrcHasSubKeys);
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
-If Result then
-  RegDeleteKeyW(SrcBaseKey,PWideChar(StrToWide(SrcSubKey)));
-end;
-
-//------------------------------------------------------------------------------
-
-Function TRegistryEx.CopyKeyMacro(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity: Boolean): Boolean;
-var
-  SrcKey,DstKey:  HKEY;
-  SrcSubKeys:     TStringList;
-begin
-DstKey := 0;
-Result := False; 
-If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights(CopySecurity) or
-  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SrcKey) then
-  try
-    SrcSubKeys := TStringList.Create;
-    try
-      If ListSubKeys(SrcKey,SrcSubKeys) then
-        If AuxCreateKey(DstBaseKEy,DstSubKey,DstSecAccRights(CopySecurity) or
-          KEY_CREATE_SUB_KEY or KEY_SET_VALUE,DstKey) then
-          try
-            Result := MoveKey(SrcKey,DstKey,SrcSubKeys,CopySecurity,False);
-          finally
-            RegCloseKey(DstKey);
-          end;
-    finally
-      SrcSubKeys.Free;
-    end;
-  finally
-    RegCloseKey(SrcKey);
-  end;
+// delete source key  
+If Result and DeleteSource and not SrcHasSubKeys then
+  Result := CheckErrorCode(RegDeleteKeyW(SrcBaseKey,PWideChar(StrToWide(SrcSubKey))));
 end;
 
 //------------------------------------------------------------------------------
@@ -1924,37 +2227,32 @@ var
 begin
 Result := False;
 If not GetValueInfo(DstKey,DstValueName,ValueInfo) then
-  If GetValueInfo(SrcKey,SrcValueName,ValueInfo) then
-    begin
-      If ValueInfo.DataSize > 0 then
-        begin
-          If GetValueDataOut(SrcKey,SrcValueName,Buffer,Size,ValueInfo.ValueType) then
-            try
-              SetValueData(DstKey,DstValueName,Buffer^,Size,ValueInfo.ValueType);
-              Result := True;
-            finally
-              FreeMem(Buffer,Size);
-            end;
-        end
-      else
-        begin
-          SetValueData(DstKey,DstValueName,nil^,0,ValueInfo.ValueType);
-          Result := True;
-        end;
-      If DeleteSource then
-        RegDeleteValueW(SrcKey,PWideChar(StrToWide(SrcValueName)));
-    end;
+  begin
+    If GetValueInfo(SrcKey,SrcValueName,ValueInfo) then
+      begin
+        If ValueInfo.DataSize > 0 then
+          begin
+            If GetValueDataOut(SrcKey,SrcValueName,Buffer,Size,ValueInfo.ValueType) then
+              try
+                Result := TrySetValueData(DstKey,DstValueName,Buffer^,Size,ValueInfo.ValueType);
+              finally
+                FreeMem(Buffer,Size);
+              end;
+          end
+        else Result := TrySetValueData(DstKey,DstValueName,nil^,0,ValueInfo.ValueType);
+        If Result and DeleteSource then
+          Result := CheckErrorCode(RegDeleteValueW(SrcKey,PWideChar(StrToWide(SrcValueName))));
+      end;
+  end
+else SetErrorCode(ERROR_ALREADY_EXISTS);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TRegistryEx.SetValueData(const TypeName: String; Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
-var
-  CallResult: LSTATUS;
 begin
-CallResult := RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size));
-If CallResult <> ERROR_SUCCESS then
-  raise ERXRegistryWriteError.CreateFmt('TRegistryEx.Write%s: Unable to write value "%s" (%d).',[TypeName,ValueName,CallResult]);
+If not CheckErrorCode(RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size))) then
+  raise ERXRegWriteError.CreateFmt('TRegistryEx.Write%s: Unable to write value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1969,13 +2267,9 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-procedure TRegistryEx.SetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType);
-var
-  CallResult: LSTATUS;
+Function TRegistryEx.TrySetValueData(Key: HKEY; const ValueName: String; const Data; Size: TMemSize; ValueType: TRXValueType): Boolean;
 begin
-CallResult := RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size));
-If CallResult <> ERROR_SUCCESS then
-  raise ERXRegistryWriteError.CreateFmt('TRegistryEx.SetValueData: Unable to write value "%s" (%d).',[ValueName,CallResult]);
+Result := CheckErrorCode(RegSetValueExW(Key,PWideChar(StrToWide(ValueName)),0,TranslateValueType(ValueType),@Data,DWORD(Size)));
 end;
 
 //------------------------------------------------------------------------------
@@ -1988,10 +2282,10 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_SET_VALUE
   try
     SetValueData(TypeName,TempKey,ValueName,Value,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
-  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2004,10 +2298,10 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     SetValueData(TypeName,TempKey,ValueName,Value,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
-  [TypeName,KeyName,fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Write%s: Unable to open key "%s" for writing (%d).',
+  [TypeName,KeyName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2038,58 +2332,48 @@ var
   RegValueType: DWORD;
 begin
 Result := False;
-fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize);
-If fAuxReadResult in [ERROR_SUCCESS,ERROR_MORE_DATA] then
+If CheckErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize),True) then
   begin
     If TranslateValueType(RegValueType) = ValueType then
       begin
-        If RegDataSize <> 0 then
-          begin
-            // non-empty data
-            // it is necessary to keep the size, as RegQueryValueExW can fill the RegDataSize with bogus data
-            Size := TMemSize(RegDataSize);
-            GetMem(Mem,Size);
-            while True do
-              begin
-                fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,Mem,@RegDataSize);
-                case fAuxReadResult of
-                  ERROR_SUCCESS:    begin
-                                      If TMemSize(RegDataSize) <> Size then
-                                        begin
-                                          Size := TMemSize(RegDataSize);
-                                          ReallocMem(Mem,Size);
-                                        end;
-                                      Result := True;
-                                      Break{while};
-                                    end;
-                  ERROR_MORE_DATA:  begin
-                                      // do not call realloc, there is no need to preserve any data
-                                      FreeMem(Mem,Size);
-                                      Size := TMemSize(RegDataSize) * 2;
-                                      GetMem(Mem,Size);
-                                      RegDataSize := DWORD(Size);
-                                    end;
-                else
-                 {some error...}
-                  Break{while};
-                end;
-              end;
-            If not Result then
-              begin
-                FreeMem(Mem,Size);
-                Mem := nil;
-                Size := 0;
-              end;
-          end
+        If RegDataSize <= 0 then
+          Size := 8 * 1024 {8KiB}
         else
+          Size := TMemSize(RegDataSize);
+        // it is necessary to keep the size, as RegQueryValueExW can fill the RegDataSize with bogus data
+        GetMem(Mem,Size);
+        while True do
           begin
-            // zero-size data
+            RegDataSize := DWORD(Size);
+            case SetErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,Mem,@RegDataSize)) of
+              ERROR_SUCCESS:    begin
+                                  If TMemSize(RegDataSize) <> Size then
+                                    begin
+                                      Size := TMemSize(RegDataSize);
+                                      ReallocMem(Mem,Size);
+                                    end;
+                                  Result := True;
+                                  Break{while};
+                                end;
+              ERROR_MORE_DATA:  begin
+                                  // do not call realloc, there is no need to preserve any data
+                                  FreeMem(Mem,Size);
+                                  Size := Size * 2;
+                                  GetMem(Mem,Size);
+                                end;
+            else
+             {some error...}
+              Break{while};
+            end;
+          end;
+        If not Result then
+          begin
+            FreeMem(Mem,Size);
             Mem := nil;
             Size := 0;
-            Result := True;
           end;
       end
-    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+    else SetErrorCode(ERROR_DATATYPE_MISMATCH);
   end;
 end;
 
@@ -2099,55 +2383,48 @@ Function TRegistryEx.GetValueDataOut(Key: HKEY; const ValueName: String; out Str
 var
   RegDataSize:  DWORD;
   RegValueType: DWORD;
+  Temp:         TStrSize;
 begin
 Result := False;
-fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize);
-If fAuxReadResult in [ERROR_SUCCESS,ERROR_MORE_DATA] then
+If CheckErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,nil,@RegDataSize),True) then
   begin
     If TranslateValueType(RegValueType) = ValueType then
       begin
-        If RegDataSize <> 0 then
-          begin
-            // non-empty data
-            SetLength(Str,RegDataSize div SizeOf(WideChar));
-            RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
-            while True do
-              begin
-                fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,nil,PByte(PWideChar(Str)),@RegDataSize);
-                case fAuxReadResult of
-                  ERROR_SUCCESS:    begin
-                                      If RegDataSize <> DWORD(Length(Str) * SizeOf(WideChar)) then
-                                        SetLength(Str,RegDataSize div SizeOf(WideChar));
-                                      Result := True;
-                                      Break{while};
-                                    end;
-                  ERROR_MORE_DATA:  begin
-                                      SetLength(Str,0); // prevent copying of data
-                                      SetLength(Str,RegDataSize div SizeOf(WideChar));
-                                      RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
-                                    end;
-                else
-                 {some error...}
-                  Break{while};
-                end;
-              end;
-            If Result then
-              begin
-                // remove terminating zero
-                If Length(Str) > 0 then
-                  If Str[Length(Str)] = WideChar(#0) then
-                    SetLength(Str,Length(Str) - 1);
-              end
-            else Str := '';
-          end
+        If RegDataSize <= 0 then
+          SetLength(Str,8 * 1024)
         else
+          SetLength(Str,RegDataSize div SizeOf(WideChar));
+        while True do
           begin
-            // zero-size data
-            Str := '';
-            Result := True;
+            RegDataSize := DWORD(Length(Str) * SizeOf(WideChar));
+            case SetErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),
+                                               nil,nil,PByte(PWideChar(Str)),@RegDataSize)) of
+              ERROR_SUCCESS:    begin
+                                  If RegDataSize <> DWORD(Length(Str) * SizeOf(WideChar)) then
+                                    SetLength(Str,RegDataSize div SizeOf(WideChar));
+                                  Result := True;
+                                  Break{while};
+                                end;
+              ERROR_MORE_DATA:  begin
+                                  Temp := Length(Str);
+                                  SetLength(Str,0); // prevent copying of data
+                                  SetLength(Str,Temp * 2);
+                                end;
+            else
+             {some error...}
+              Break{while};
+            end;
           end;
+        If Result then
+          begin
+            // remove terminating zero
+            If Length(Str) > 0 then
+              If Str[Length(Str)] = WideChar(#0) then
+                SetLength(Str,Length(Str) - 1);
+          end
+        else Str := '';
       end
-    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+    else SetErrorCode(ERROR_DATATYPE_MISMATCH);
   end;
 end;
 
@@ -2160,15 +2437,14 @@ var
 begin
 Result := False;
 RegDataSize := DWORD(Size);
-fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize);
-If fAuxReadResult = ERROR_SUCCESS then
+If CheckErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize)) then
   begin
     If TranslateValueType(ValueType) = RegValueType then
       begin
         Result := True;
         Size := TMemSize(RegDataSize);
       end
-    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+    else SetErrorCode(ERROR_DATATYPE_MISMATCH);
   end;
 end;
 
@@ -2181,8 +2457,7 @@ var
 begin
 Result := False;
 RegDataSize := DWORD(Size);
-fAuxReadResult := RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize);
-If fAuxReadResult = ERROR_SUCCESS then
+If CheckErrorCode(RegQueryValueExW(Key,PWideChar(StrToWide(ValueName)),nil,@RegValueType,@Data,@RegDataSize)) then
   begin
   {
     This function is intended only for invariant-size data, so to consider it
@@ -2194,9 +2469,9 @@ If fAuxReadResult = ERROR_SUCCESS then
         If TMemSize(RegDataSize) = Size then
           Result := True
         else
-          fAuxReadResult := ERROR_INCORRECT_SIZE;
+          SetErrorCode(ERROR_INCORRECT_SIZE);
       end
-    else fAuxReadResult := ERROR_DATATYPE_MISMATCH;
+    else SetErrorCode(ERROR_DATATYPE_MISMATCH);
   end;
 end;
 
@@ -2220,7 +2495,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2235,7 +2510,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2250,7 +2525,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := GetValueDataOut(TempKey,ValueName,Str,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2265,7 +2540,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := GetValueDataOut(TempKey,ValueName,Str,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2280,7 +2555,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2295,7 +2570,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2310,7 +2585,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := GetValueData(TempKey,ValueName,Value,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2325,7 +2600,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := GetValueData(TempKey,ValueName,Value,Size,ValueType);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2359,12 +2634,12 @@ begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2376,12 +2651,12 @@ begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueDataOut(TempKey,ValueName,Mem,Size,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,KeyName,fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2389,7 +2664,7 @@ end;
 procedure TRegistryEx.ReadMacroOut(const TypeName,ValueName: String; out Mem: Pointer; out Size: TMemSize; ValueType: TRXValueType);
 begin
 If not GetValueDataOut(GetWorkingKey(True),ValueName,Mem,Size,ValueType) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2401,12 +2676,12 @@ begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueDataOut(TempKey,ValueName,Str,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2418,12 +2693,12 @@ begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueDataOut(TempKey,ValueName,Str,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,KeyName,fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2431,7 +2706,7 @@ end;
 procedure TRegistryEx.ReadMacroOut(const TypeName,ValueName: String; out Str: WideString; ValueType: TRXValueType);
 begin
 If not GetValueDataOut(GetWorkingKey(True),ValueName,Str,ValueType) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
 end;
 
 //------------------------------------------------------------------------------
@@ -2443,12 +2718,12 @@ begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2460,12 +2735,12 @@ begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueDataExtBuff(TempKey,ValueName,Value,Size,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,KeyName,fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2473,7 +2748,7 @@ end;
 procedure TRegistryEx.ReadMacroExtBuff(const TypeName,ValueName: String; out Value; var Size: TMemSize; ValueType: TRXValueType);
 begin
 If not GetValueDataExtBuff(GetWorkingKey(True),ValueName,Value,Size,ValueType) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
 end;
 
 //------------------------------------------------------------------------------
@@ -2485,12 +2760,12 @@ begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueData(TempKey,ValueName,Value,Size,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,ConcatKeyNames(PredefinedKeytoStr(RootKey),TrimKeyName(KeyName)),fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2502,12 +2777,12 @@ begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE,TempKey) then
   try
     If not GetValueData(TempKey,ValueName,Value,Size,ValueType) then
-      raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+      raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
-else raise ERXInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
-  [TypeName,KeyName,fAuxOpenResult]);
+else raise ERXRegInvalidKey.CreateFmt('TRegistryEx.Read%s: Unable to open key "%s" for reading (%d).',
+  [TypeName,KeyName,fLastSysError]);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2515,7 +2790,7 @@ end;
 procedure TRegistryEx.ReadMacro(const TypeName,ValueName: String; out Value; Size: TMemSize; ValueType: TRXValueType);
 begin
 If not GetValueData(GetWorkingKey(True),ValueName,Value,Size,ValueType) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fAuxReadResult]);
+  raise ERXRegReadError.CreateFmt('TRegistryEx.Read%s: Unable to read value "%s" (%d).',[TypeName,ValueName,fLastSysError]);
 end;
 
 //------------------------------------------------------------------------------
@@ -2560,8 +2835,7 @@ fRemoteRootKey := False;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
 fFlushOnClose := False;
-fAuxOpenResult := ERROR_SUCCESS;
-fAuxReadResult := ERROR_SUCCESS;
+fLastSysError := ERROR_SUCCESS;
 end;
 
 //------------------------------------------------------------------------------
@@ -2576,32 +2850,6 @@ end;
 {-------------------------------------------------------------------------------
     TRegistryEx - public methods
 -------------------------------------------------------------------------------}
-
-class Function TRegistryEx.RegistryQuotaAllowed: UInt32;
-var
-  Allowed:  DWORD;
-  Used:     DWORD;
-begin
-If GetSystemRegistryQuota(@Allowed,@Used) then
-  Result := UInt32(Allowed)
-else
-  Result := 0;
-end;
-
-//------------------------------------------------------------------------------
-
-class Function TRegistryEx.RegistryQuotaUsed: UInt32;
-var
-  Allowed:  DWORD;
-  Used:     DWORD;
-begin
-If GetSystemRegistryQuota(@Allowed,@Used) then
-  Result := UInt32(Used)
-else
-  Result := 0;
-end;
-
-//------------------------------------------------------------------------------
 
 constructor TRegistryEx.Create(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights = karAllAccess);
 begin
@@ -2626,16 +2874,48 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.RegistryQuotaAllowed: UInt32;
+var
+  Allowed:  DWORD;
+  Used:     DWORD;
+begin
+If not GetSystemRegistryQuota(@Allowed,@Used) then
+  begin
+    Result := 0;
+    SetErrorCode(GetLastError);
+  end
+else Result := UInt32(Allowed);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.RegistryQuotaUsed: UInt32;
+var
+  Allowed:  DWORD;
+  Used:     DWORD;
+begin
+If not GetSystemRegistryQuota(@Allowed,@Used) then
+  begin
+    Result := 0;
+    SetErrorCode(GetLastError);
+  end
+else Result := UInt32(Used);
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.DisablePredefinedCache(AllKeys: Boolean): Boolean;
 begin
 If AllKeys then
   begin
-    If Assigned(RegDisablePredefinedCacheEx) then
-      Result := RegDisablePredefinedCacheEx = ERROR_SUCCESS
-    else
-      Result := False;
+    If not Assigned(RegDisablePredefinedCacheEx) then
+      begin
+        SetErrorCode(ERROR_CALL_NOT_IMPLEMENTED);
+        Result := False;
+      end
+    else Result := CheckErrorCode(RegDisablePredefinedCacheEx);
   end
-else Result := RegDisablePredefinedCache = ERROR_SUCCESS;
+else Result := CheckErrorCode(RegDisablePredefinedCache);
 end;
 
 //------------------------------------------------------------------------------
@@ -2645,7 +2925,7 @@ var
   TempKey:  HKEY;
 begin
 TempKey := 0;
-Result := RegConnectRegistryW(PWideChar(StrToWide(MachineName)),TranslatePredefinedKey(RootKey),TempKey) = ERROR_SUCCESS;
+Result := CheckErrorCode(RegConnectRegistryW(PWideChar(StrToWide(MachineName)),TranslatePredefinedKey(RootKey),TempKey));
 If Result then
   begin
     CloseKey;
@@ -2660,13 +2940,13 @@ Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; Root
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ALL_ACCESS,TempKey) then
   try
-    Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey) = ERROR_SUCCESS
+    Result := CheckErrorCode(RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey));
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey); // this does not affect last error
   end
-else Result := False;
+else Result := False; // last error is set in AuxOpenKey
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2675,11 +2955,11 @@ Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; cons
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ALL_ACCESS,TempKey) then
   try
-    Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey) = ERROR_SUCCESS
+    Result := CheckErrorCode(RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),TempKey));
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2688,17 +2968,19 @@ end;
 
 Function TRegistryEx.OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean;
 begin
-If fCurrentKeyHandle <> 0 then
-  Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),fCurrentKeyHandle) = ERROR_SUCCESS
-else
-  Result := False;
+If fCurrentKeyHandle = 0 then
+  begin
+    SetErrorCode(ERROR_INVALID_HANDLE);
+    Result := False;
+  end
+else Result := CheckErrorCode(RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),fCurrentKeyHandle))
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean;
 begin
-Result := RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),0) = ERROR_SUCCESS;
+Result := CheckErrorCode(RegOverridePredefKey(TranslatePredefinedKey(PredefinedKey),0));
 end;
 
 //------------------------------------------------------------------------------
@@ -2708,25 +2990,28 @@ var
   TempKey:      HKEY;
   Disposition:  DWORD;
 begin
-TempKey := 0;
-If CanCreate then
+If CanCreate and (Length(KeyName) > 0) then
   begin
     Result := AuxCreateKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
       fAccessRightsSys,TempKey,TranslateCreateOptions(CreateOptions),@Disposition);
-    case Disposition of
-      REG_CREATED_NEW_KEY:      Created := True;
-      REG_OPENED_EXISTING_KEY:  Created := False;
-    else
-      raise ERXInvalidValue.CreateFmt('TRegistryEx.OpenKey: Invalid disposition (%d).',[Disposition]);
-    end;
+    If Result then
+      case Disposition of
+        REG_CREATED_NEW_KEY:      Created := True;
+        REG_OPENED_EXISTING_KEY:  Created := False;
+      else
+        AuxCloseKey(TempKey);
+        raise ERXRegistryError.CreateFmt('TRegistryEx.OpenKey: Invalid disposition (%d).',[Disposition]);
+      end;
   end
 else
   begin
-    Result := AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),fAccessRightsSys,TempKey);
+    Result := AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
+                         fAccessRightsSys,TempKey);
     Created := False;
   end;
 If Result then
   begin
+    CloseKey;
     ChangeRootKey(TranslatePredefinedKey(RootKey),RootKey);
     ChangeCurrentKey(TempKey,TrimKeyName(KeyName));
   end;
@@ -2740,17 +3025,18 @@ var
   WorkingKeyName: String;
   Disposition:    DWORD;
 begin
-TempKey := 0;
-If CanCreate then
+If CanCreate and (Length(KeyName) > 0) then
   begin
     Result := AuxCreateKey(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),TrimKeyName(KeyName),
       fAccessRightsSys,TempKey,TranslateCreateOptions(CreateOptions),@Disposition);
-    case Disposition of
-      REG_CREATED_NEW_KEY:      Created := True;
-      REG_OPENED_EXISTING_KEY:  Created := False;
-    else
-      raise ERXInvalidValue.CreateFmt('TRegistryEx.OpenKey: Invalid disposition (%d).',[Disposition]);
-    end;
+    If Result then
+      case Disposition of
+        REG_CREATED_NEW_KEY:      Created := True;
+        REG_OPENED_EXISTING_KEY:  Created := False;
+      else
+        AuxCloseKey(TempKey);
+        raise ERXRegistryError.CreateFmt('TRegistryEx.OpenKey: Invalid disposition (%d).',[Disposition]);
+      end;
   end
 else
   begin
@@ -2759,7 +3045,10 @@ else
     Created := False;
   end;
 If Result then
-  ChangeCurrentKey(TempKey,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)));
+  begin
+    CloseKey;
+    ChangeCurrentKey(TempKey,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)));
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2787,12 +3076,12 @@ var
   AccessRightsTemp: DWORD;
   TempKey:          HKEY;
 begin
-TempKey := 0;
 // preserve karWoW64_32Key and karWoW64_64Key from current access rights
 AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
 Result := AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),AccessRightsTemp,TempKey);
 If Result then
   begin
+    CloseKey;
     SetAccessRightsSys(AccessRightsTemp);
     ChangeRootKey(TranslatePredefinedKey(RootKey),RootKey);
     ChangeCurrentKey(TempKey,TrimKeyName(KeyName));
@@ -2807,12 +3096,12 @@ var
   TempKey:          HKEY;
   WorkingKeyName:   String;
 begin
-TempKey := 0;
 AccessRightsTemp := TranslateAccessRights(karRead + (fAccessRights * karWoW64_Res));
 Result := AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),
                      TrimKeyName(KeyName),AccessRightsTemp,TempKey);
 If Result then
   begin
+    CloseKey;
     SetAccessRightsSys(AccessRightsTemp);
     ChangeCurrentKey(TempKey,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)));
   end;
@@ -2828,7 +3117,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGH
   try
     Result := TempKey <> 0;
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2843,7 +3132,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),STA
   try
     Result := TempKey <> 0;
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2852,32 +3141,42 @@ end;
 
 Function TRegistryEx.CreateKey(RootKey: TRXPredefinedKey; const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean;
 var
-  TempKey:  HKEY;
+  TempKey:      HKEY;
+  Disposition:  DWORD;
 begin
-TempKey := 0;
+Result := False;
 If AuxCreateKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
-  TranslateAccessRights(AccessRights),TempKey,TranslateCreateOptions(CreateOptions)) then
+  TranslateAccessRights(AccessRights),TempKey,TranslateCreateOptions(CreateOptions),@Disposition) then
   begin
-    RegCloseKey(TempKey);
-    Result := True;
-  end
-else Result := False;
+    AuxCloseKey(TempKey);
+    case Disposition of
+      REG_CREATED_NEW_KEY:      Result := True;
+      REG_OPENED_EXISTING_KEY:  SetErrorCode(ERROR_ALREADY_EXISTS);
+    else
+      raise ERXRegistryError.CreateFmt('TRegistryEx.CreateKey: Invalid disposition (%d).',[Disposition]);
+    end;
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.CreateKey(const KeyName: String; AccessRights: TRXKeyAccessRights = karAllAccess; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean;
 var
-  TempKey:  HKEY;
+  TempKey:      HKEY;
+  Disposition:  DWORD;
 begin
-TempKey := 0;
+Result := False;
 If AuxCreateKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
-  TranslateAccessRights(AccessRights),TempKey,TranslateCreateOptions(CreateOptions)) then
+  TranslateAccessRights(AccessRights),TempKey,TranslateCreateOptions(CreateOptions),@Disposition) then
   begin
-    RegCloseKey(TempKey);
-    Result := True;
-  end
-else Result := False;
+    AuxCloseKey(TempKey);
+    case Disposition of
+      REG_CREATED_NEW_KEY:      Result := True;
+      REG_OPENED_EXISTING_KEY:  SetErrorCode(ERROR_ALREADY_EXISTS);
+    else
+      raise ERXRegistryError.CreateFmt('TRegistryEx.CreateKey: Invalid disposition (%d).',[Disposition]);
+    end;
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -2886,6 +3185,7 @@ Function TRegistryEx.DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String;
 var
   CurrentIsSubKey:  Boolean;
 begin
+{$message 'rewisit'}
 CurrentIsSubKey := (fCurrentKeyHandle <> 0) and ((RootKey = Self.RootKey) and IsSubKeyOf(fCurrentKeyName,TrimKeyName(KeyName)));
 If not CurrentIsSubKey or CanDeleteCurrentKey then
   Result := SHDeleteKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS
@@ -2904,6 +3204,7 @@ var
   WorkingKeyName:   String;
   CurrentIsSubKey:  Boolean;
 begin
+{$message 'rewisit'}
 WorkingKey := GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName);
 CurrentIsSubKey := (fCurrentKeyHandle <> 0) and ((RootKey = Self.RootKey) and
                    IsSubKeyOf(fCurrentKeyName,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName))));
@@ -2951,7 +3252,7 @@ begin
 If fCurrentKeyHandle <> 0 then
   begin
     If fFlushOnClose then
-      FlushKey;
+      RegFlushKey(fCurrentKeyHandle);    
     RegCloseKey(fCurrentKeyHandle);
   end;
 fCurrentKeyHandle := 0;
@@ -2968,7 +3269,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := GetKeyInfo(TempKey,KeyInfo);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -2983,7 +3284,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := GetKeyInfo(TempKey,KeyInfo);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3041,7 +3342,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE
   try
     GetSubKeys(TempKey,SubKeys);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else SubKeys.Clear;
 end;
@@ -3056,7 +3357,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     GetSubKeys(TempKey,SubKeys);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else SubKeys.Clear;
 end;
@@ -3078,7 +3379,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := GetValueInfo(TempKey,ValueName,ValueInfo);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3093,7 +3394,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := GetValueInfo(TempKey,ValueName,ValueInfo);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3151,7 +3452,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     GetValues(TempKey,Values);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Values.Clear;
 end;
@@ -3166,7 +3467,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     GetValues(TempKey,Values);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Values.Clear;
 end;
@@ -3279,15 +3580,63 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.ValueOfTypeExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; ValueType: TRXValueType): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+Result := False;
+If GetValueInfo(RootKey,KeyName,ValueName,ValueInfo) then
+  begin
+    If ValueInfo.ValueType = ValueType then
+      Result := True
+    else
+      SetErrorCode(ERROR_DATATYPE_MISMATCH);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ValueOfTypeExists(const KeyName,ValueName: String; ValueType: TRXValueType): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+Result := False;
+If GetValueInfo(KeyName,ValueName,ValueInfo) then
+  begin
+    If ValueInfo.ValueType = ValueType then
+      Result := True
+    else
+      SetErrorCode(ERROR_DATATYPE_MISMATCH);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ValueOfTypeExists(const ValueName: String; ValueType: TRXValueType): Boolean;
+var
+  ValueInfo:  TRXValueInfo;
+begin
+Result := False;
+If GetValueInfo(ValueName,ValueInfo) then
+  begin
+    If ValueInfo.ValueType = ValueType then
+      Result := True
+    else
+      SetErrorCode(ERROR_DATATYPE_MISMATCH);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.DeleteValue(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean;
 var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
   try
-    Result := RegDeleteValueW(TempKey,PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
+    Result := CheckErrorCode(RegDeleteValueW(TempKey,PWideChar(StrToWide(ValueName))));
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3300,9 +3649,9 @@ var
 begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_SET_VALUE,TempKey) then
   try
-    Result := RegDeleteValueW(TempKey,PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
+    Result := CheckErrorCode(RegDeleteValueW(TempKey,PWideChar(StrToWide(ValueName))));
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3311,7 +3660,7 @@ end;
 
 Function TRegistryEx.DeleteValue(const ValueName: String): Boolean;
 begin
-Result := RegDeleteValueW(GetWorkingKey(True),PWideChar(StrToWide(ValueName))) = ERROR_SUCCESS
+Result := CheckErrorCode(RegDeleteValueW(GetWorkingKey(True),PWideChar(StrToWide(ValueName))));
 end;
 
 //------------------------------------------------------------------------------
@@ -3321,11 +3670,11 @@ var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
-     KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteSubKeys(TempKey);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end;
 end;
 
@@ -3336,11 +3685,11 @@ var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
-     KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteSubKeys(TempKey);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end;
 end;
 
@@ -3357,11 +3706,12 @@ procedure TRegistryEx.DeleteValues(RootKey: TRXPredefinedKey; const KeyName: Str
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
+  KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteValues(TempKey);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end;
 end;
 
@@ -3371,11 +3721,12 @@ procedure TRegistryEx.DeleteValues(const KeyName: String);
 var
   TempKey:  HKEY;
 begin
-If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
+  KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteValues(TempKey);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end;
 end;
 
@@ -3414,96 +3765,64 @@ end;
 
 Function TRegistryEx.CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 begin
-If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
-  Result := CopyKeyMacro(
-    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
-    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+Result := MoveKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+  TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors,False);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.CopyKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
-begin 
-If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstKeyName) then
-  Result := CopyKeyMacro(
-    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
-    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+begin
+Result := MoveKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+  GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors,False);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
-begin 
-If KeyExists(SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
-  Result := CopyKeyMacro(
-    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
-    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+begin
+Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+  TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors,False);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 begin
-If KeyExists(SrcKeyName) and not KeyExists(DstKeyName) then
-  Result := CopyKeyMacro(
-    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
-    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+  GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors,False);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 begin
-If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
-  Result := MoveKeyMacro(
-    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
-    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+Result := MoveKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+  TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
-begin 
-If KeyExists(SrcRootKey,SrcKeyName) and not KeyExists(DstKeyName) then
-  Result := MoveKeyMacro(
-    TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
-    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+begin
+Result := MoveKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
+  GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.MoveKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
-begin 
-If KeyExists(SrcKeyName) and not KeyExists(DstRootKey,DstKeyName) then
-  Result := MoveKeyMacro(
-    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
-    TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+begin
+Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+  TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 begin
-If KeyExists(SrcKeyName) and not KeyExists(DstKeyName) then
-  Result := MoveKeyMacro(
-    GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
-    GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors)
-else
-  Result := False;
+Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+  GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
 end;
 
 //------------------------------------------------------------------------------
@@ -3573,7 +3892,7 @@ end;
   1     0     1
   1     1     1
 }
-
+{$message 'todo'}
 Function TRegistryEx.RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String): Boolean;
 var
   OldKeyNameTrim: String;
@@ -3588,6 +3907,25 @@ If (Length(OldKeyNameTrim) > 0) and (Length(NewKeyNameTrim) > 0) then
   begin
     OldMultiLevel := IsMultiLevelKeyPath(OldKeyNameTrim);
     NewMultiLevel := IsMultiLevelKeyPath(NewKeyNameTrim);
+    If IsMultiLevelKeyPath(OldKeyNameTrim) then
+      begin
+        If IsMultiLevelKeyPath(NewKeyNameTrim) then
+          begin
+          end
+        else
+          begin
+          end;
+      end
+    else
+      begin
+        If not IsMultiLevelKeyPath(NewKeyNameTrim) then
+          begin
+            // both old and new are simple names
+            //MoveKey()
+          end
+        else Exit;  // invalid combination
+      end;
+    (*
     // if NewMultiLevel is true, then OldMultiLevel mut be too
     If OldMultiLevel or not(NewMultiLevel) then
       begin
@@ -3596,6 +3934,7 @@ If (Length(OldKeyNameTrim) > 0) and (Length(NewKeyNameTrim) > 0) then
 
           end;
       end;
+    *)
   end;
 end;
 
@@ -3612,10 +3951,10 @@ If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_QUE
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3632,10 +3971,10 @@ If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_QUE
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3652,10 +3991,10 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyNam
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3672,10 +4011,10 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyNam
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,False);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3689,7 +4028,7 @@ If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET
   try
     Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,False);
   finally
-    RegCloseKey(DstKey);
+    AuxCloseKey(DstKey);
   end
 else Result := False;
 end;
@@ -3704,7 +4043,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyNam
   try
     Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,False);
   finally
-    RegCloseKey(DstKey);
+    AuxCloseKey(DstKey);
   end
 else Result := False;
 end;
@@ -3719,7 +4058,7 @@ If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_QUE
   try
     Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,False);
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end
 else Result := False;
 end;
@@ -3734,7 +4073,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyNam
   try
     Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,False);
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end
 else Result := False;
 end;
@@ -3749,7 +4088,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,False);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3764,7 +4103,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,False);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3792,10 +4131,10 @@ If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_SET
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3812,10 +4151,10 @@ If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_SET
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3832,10 +4171,10 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyNam
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3852,10 +4191,10 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyNam
       try
         Result := MoveValue(SrcKey,SrcValueName,DstKey,DstValueName,True);
       finally
-        RegCloseKey(DstKey);
+        AuxCloseKey(DstKey);
       end;
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end;
 end;
 
@@ -3869,7 +4208,7 @@ If AuxOpenKey(TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),KEY_SET
   try
     Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,True);
   finally
-    RegCloseKey(DstKey);
+    AuxCloseKey(DstKey);
   end
 else Result := False;
 end;
@@ -3884,7 +4223,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyNam
   try
     Result := MoveValue(GetWorkingKey(True),SrcValueName,DstKey,DstValueName,True);
   finally
-    RegCloseKey(DstKey);
+    AuxCloseKey(DstKey);
   end
 else Result := False;
 end;
@@ -3899,7 +4238,7 @@ If AuxOpenKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),KEY_SET
   try
     Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,True);
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end
 else Result := False;
 end;
@@ -3914,7 +4253,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyNam
   try
     Result := MoveValue(SrcKey,SrcValueName,GetWorkingKey(True),DstValueName,True);
   finally
-    RegCloseKey(SrcKey);
+    AuxCloseKey(SrcKey);
   end
 else Result := False;
 end;
@@ -3929,7 +4268,7 @@ If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_QUERY_VAL
   try
     Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,True);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -3944,7 +4283,7 @@ If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY
   try
     Result := MoveValue(TempKey,SrcValueName,TempKey,DstValueName,True);
   finally
-    RegCloseKey(TempKey);
+    AuxCloseKey(TempKey);
   end
 else Result := False;
 end;
@@ -6091,8 +6430,7 @@ end;
 Function TRegistryEx.ReadBinaryBuffer(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; out Buff; Size: TMemSize): TMemSize;
 begin
 Result := Size;
-If not TryReadBinaryBuffer(RootKey,KeyName,ValueName,Buff,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value "%s".',[ValueName]);
+ReadMacroExtBuff('BinaryBuffer',RootKey,KeyName,ValueName,Buff,Result,vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -6100,8 +6438,7 @@ end;
 Function TRegistryEx.ReadBinaryBuffer(const KeyName,ValueName: String; out Buff; Size: TMemSize): TMemSize;
 begin
 Result := Size;
-If not TryReadBinaryBuffer(KeyName,ValueName,Buff,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value "%s".',[ValueName]);
+ReadMacroExtBuff('BinaryBuffer',KeyName,ValueName,Buff,Result,vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -6109,8 +6446,7 @@ end;
 Function TRegistryEx.ReadBinaryBuffer(const ValueName: String; out Buff; Size: TMemSize): TMemSize;
 begin
 Result := Size;
-If not TryReadBinaryBuffer(ValueName,Buff,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryBuffer: Error reading value "%s".',[ValueName]);
+ReadMacroExtBuff('BinaryBuffer',ValueName,Buff,Result,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
@@ -6118,8 +6454,7 @@ end;
 Function TRegistryEx.ReadBinaryMemory(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
 begin
 Result := Size;
-If not TryReadBinaryMemory(RootKey,KeyName,ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+ReadMacroExtBuff('BinaryMemory',RootKey,KeyName,ValueName,Memory^,Result,vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -6127,8 +6462,7 @@ end;
 Function TRegistryEx.ReadBinaryMemory(const KeyName,ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
 begin
 Result := Size;
-If not TryReadBinaryMemory(KeyName,ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+ReadMacroExtBuff('BinaryMemory',KeyName,ValueName,Memory^,Result,vtBinary);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -6136,8 +6470,7 @@ end;
 Function TRegistryEx.ReadBinaryMemory(const ValueName: String; Memory: Pointer; Size: TMemSize): TMemSize;
 begin
 Result := Size;
-If not TryReadBinaryMemory(ValueName,Memory,Result) then
-  raise ERXRegistryReadError.CreateFmt('TRegistryEx.ReadBinaryMemory: Error reading value "%s".',[ValueName]);
+ReadMacroExtBuff('BinaryMemory',ValueName,Memory^,Result,vtBinary);
 end;
 
 //------------------------------------------------------------------------------
