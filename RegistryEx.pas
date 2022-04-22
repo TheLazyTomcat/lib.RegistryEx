@@ -306,15 +306,16 @@ type
 type
   TRegistryEx = class(TCustomObject)
   protected
-    fAccessRightsSys:   DWORD;
-    fAccessRights:      TRXKeyAccessRights;
-    fRootKeyHandle:     HKEY;
-    fRootKey:           TRXPredefinedKey;
-    fRemoteRootKey:     Boolean;
-    fCurrentKeyHandle:  HKEY;
-    fCurrentKeyName:    String;
-    fFlushOnClose:      Boolean;
-    fLastSysError:      Integer;
+    fAccessRightsSys:         DWORD;
+    fAccessRights:            TRXKeyAccessRights;
+    fRootKeyHandle:           HKEY;
+    fRootKey:                 TRXPredefinedKey;
+    fRemoteRootKey:           Boolean;
+    fCurrentKeyHandle:        HKEY;
+    fCurrentKeyName:          String;
+    fCurrentKeyAccessRights:  TRXKeyAccessRights;
+    fFlushOnClose:            Boolean;
+    fLastSysError:            Integer;
     //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
@@ -336,6 +337,8 @@ type
     procedure ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String); virtual;
     Function GetWorkingKey(Relative: Boolean; out WorkingKeyName: String): HKEY; overload; virtual;
     Function GetWorkingKey(Relative: Boolean): HKEY; overload; virtual;
+    Function CurrentKeyIsSubKeyOf(RootKey: TRXPredefinedKey; const KeyName: String; Strict: Boolean): Boolean; overload; virtual;
+    Function CurrentKeyIsSubKeyOf(const KeyName: String; Strict: Boolean): Boolean; overload; virtual;    
     Function GetKeyInfo(Key: HKEY; out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
     procedure GetSubKeys(Key: HKEY; SubKeys: TStrings); overload; virtual;
     Function GetValueInfo(Key: HKEY; const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
@@ -509,22 +512,18 @@ type
  {A}Function ValueExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
  {B}Function ValueExists(const KeyName,ValueName: String): Boolean; overload; virtual;
  {C}Function ValueExists(const ValueName: String): Boolean; overload; virtual;
-
  {A}Function ValueOfTypeExists(RootKey: TRXPredefinedKey; const KeyName,ValueName: String; ValueType: TRXValueType): Boolean; overload; virtual;
  {B}Function ValueOfTypeExists(const KeyName,ValueName: String; ValueType: TRXValueType): Boolean; overload; virtual;
  {C}Function ValueOfTypeExists(const ValueName: String; ValueType: TRXValueType): Boolean; overload; virtual;
-
  {A}Function DeleteValue(RootKey: TRXPredefinedKey; const KeyName,ValueName: String): Boolean; overload; virtual;
  {B}Function DeleteValue(const KeyName,ValueName: String): Boolean; overload; virtual;
  {C}Function DeleteValue(const ValueName: String): Boolean; overload; virtual;
     //--- content deletion ---
-  {
-    WARNING - DeleteSubKeys can delete current key without closing it, be
-              carefull what you are deleting.
-  }
+ {A}procedure DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String; out CurrentKeyClosed: Boolean); overload; virtual;
+ {B}procedure DeleteSubKeys(const KeyName: String; out CurrentKeyClosed: Boolean); overload; virtual;
+ {C}procedure DeleteSubKeys; overload; virtual;
  {A}procedure DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String); overload; virtual;
  {B}procedure DeleteSubKeys(const KeyName: String); overload; virtual;
- {C}procedure DeleteSubKeys; overload; virtual;
  {A}procedure DeleteValues(RootKey: TRXPredefinedKey; const KeyName: String); overload; virtual;
  {B}procedure DeleteValues(const KeyName: String); overload; virtual;
  {C}procedure DeleteValues; overload; virtual;
@@ -537,9 +536,9 @@ type
 {BA}Function CopyKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {BB}Function CopyKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
   {
-    WARNING - MoveKey can move the current key (effectively delting it).
+    If current key is a subkey of moved source key, it is closed and reopened
+    from the new location.
   }
-    {$message 'deal with current key'}
 {AA}Function MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {AB}Function MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
 {BA}Function MoveKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
@@ -597,6 +596,7 @@ type
  {C}Function RenameValue(const OldValueName,NewValueName: String): Boolean; overload; virtual;
 
     //--- keys saving and loading ---
+    {$message 'todo'}
     ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
     ////Function LoadKey(const Key, FileName: string): Boolean; virtual;
     ////RegReplaceKey
@@ -942,6 +942,11 @@ type
     property CurrentKeyHandle: HKEY read fCurrentKeyHandle;
     property CurrentKeyName: String read fCurrentKeyName;
   {
+    CurrentKeyAccessRights stores access rights with which the current key was
+    opened.
+  }
+    property CurrentKeyAccessRights: TRXKeyAccessRights read fCurrentKeyAccessRights;
+  {
     If there is no current key open, then CurrentKeyReflection returns false
     and changing it has no effect.
     Also, this settings is working only on 64bit system, it has no effect and
@@ -1060,7 +1065,10 @@ var
 {===============================================================================
     TRegistryEx - internal functions
 ===============================================================================}
-{$message 'group internal functions'}
+{-------------------------------------------------------------------------------
+    TRegistryEx - internal functions - general functions
+-------------------------------------------------------------------------------}
+
 {$IFDEF FPCDWM}{$PUSH}W5057{$ENDIF}
 Function FileTimeToDateTime(FileTime: TFileTime): TDateTime;
 var
@@ -1088,18 +1096,9 @@ else
   Result := 0;
 end;
 
-//------------------------------------------------------------------------------
-
-Function ExpandString(const Str: WideString): String;
-var
-  Temp: WideString;
-begin
-SetLength(Temp,ExpandEnvironmentStringsW(PWideChar(Str),nil,0));
-ExpandEnvironmentStringsW(PWideChar(Str),PWideChar(Temp),Length(Temp));
-Result := WideToStr(Copy(Temp,1,Length(Temp) - 1));
-end;
-
-//------------------------------------------------------------------------------
+{-------------------------------------------------------------------------------
+    TRegistryEx - internal functions - strings manipulation
+-------------------------------------------------------------------------------}
 
 Function WStrLen(const Str: WideString): TStrOff;
 var
@@ -1112,6 +1111,17 @@ For i := 1 to Length(Str) do
       Result := Pred(i);
       Break{For i};
     end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function ExpandString(const Str: WideString): String;
+var
+  Temp: WideString;
+begin
+SetLength(Temp,ExpandEnvironmentStringsW(PWideChar(Str),nil,0));
+ExpandEnvironmentStringsW(PWideChar(Str),PWideChar(Temp),Length(Temp));
+Result := WideToStr(Copy(Temp,1,Length(Temp) - 1));
 end;
 
 //------------------------------------------------------------------------------
@@ -1181,39 +1191,15 @@ If Strs.Count > 0 then
 else Result := WideChar(#0);
 end;
 
-//------------------------------------------------------------------------------
-
-Function IsRelativeKeyName(const KeyName: String): Boolean;
-begin
-{
-  If the key name starts with register path delimiter (backslash, \, #92), it
-  is considered to be an absolute path within the root key, otherwise it is
-  considered to be relative to current key.
-}
-If Length(KeyName) > 0 then
-  Result := KeyName[1] <> REG_PATH_DELIMITER
-else
-  Result := True;
-end;
-
-//------------------------------------------------------------------------------
-
-Function IsSubKeyOf(const SubKeyName,KeyName: String): Boolean;
-begin
-If (Length(KeyName) > 0) and (Length(SubKeyName) > 0) then
-  begin
-    If Length(KeyName) < Length(SubKeyName) then
-      Result := AnsiStartsText(KeyName,SubKeyName) and (SubKeyName[Length(KeyName) + 1] = REG_PATH_DELIMITER)
-    else
-      Result := AnsiSameText(SubKeyName,KeyName);
-  end
-else Result := False;
-end;
-
-//------------------------------------------------------------------------------
+{-------------------------------------------------------------------------------
+    TRegistryEx - internal functions - key names/paths operations
+-------------------------------------------------------------------------------}
 
 Function TrimKeyName(const KeyName: String): String;
 begin
+{
+  Remove all path delimiters from both sides of the given string.
+}
 If Length(KeyName) > 1 then
   begin
     Result := KeyName;
@@ -1234,6 +1220,67 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function IsRelativeKeyName(const KeyName: String): Boolean;
+begin
+{
+  If the key name starts with register path delimiter (backslash, \, #92), it
+  is considered to be an absolute path within the root key, otherwise it is
+  considered to be relative to current key.
+}
+If Length(KeyName) > 0 then
+  Result := KeyName[1] <> REG_PATH_DELIMITER
+else
+  Result := True;
+end;
+
+//------------------------------------------------------------------------------
+
+Function IsSubKeyOf(const SubKeyName,KeyName: String): Boolean;
+begin
+If Length(KeyName) > 0 then
+  begin
+  {
+    Key name is not empty, therefore we must check whether the name of given
+    subkey starts with a name of this key - if so, then we can assume the given
+    subkey to be hierarchically a subkey of given (super)key.
+
+    Also when both names are matching, true is returned.
+  }
+    If Length(SubKeyName) > 0 then
+      begin
+        If Length(KeyName) < Length(SubKeyName) then
+          Result := AnsiStartsText(KeyName,SubKeyName) and
+                    (SubKeyName[Length(KeyName) + 1] = REG_PATH_DELIMITER)
+        else
+          Result := AnsiSameText(SubKeyName,KeyName);
+      end
+    else Result := False;
+  end
+// a key with empty name is a superkey for any other key
+else Result := True;
+end;
+
+//------------------------------------------------------------------------------
+
+Function IsStrictSubKeyOf(const SubKeyName,KeyName: String): Boolean;
+begin
+If Length(KeyName) > 0 then
+  begin
+    If Length(SubKeyName) > 0 then
+      begin
+        If Length(KeyName) < Length(SubKeyName) then
+          Result := AnsiStartsText(KeyName,SubKeyName) and
+                    (SubKeyName[Length(KeyName) + 1] = REG_PATH_DELIMITER)
+        else
+          Result := False;
+      end
+    else Result := False;
+  end
+else Result := Length(SubKeyName) > 0;
+end;
+
+//------------------------------------------------------------------------------
+
 Function ConcatKeyNames(const A,B: String): String;
 begin
 // both A and B are expected to be trimmed
@@ -1248,6 +1295,50 @@ else
 end;
 
 //------------------------------------------------------------------------------
+
+Function ReplaceSuperKey(const KeyName,FromSuperKey,ToSuperKey: String; out ReplacedPath: String): Boolean;
+begin
+ReplacedPath := '';
+Result := True;
+If Length(KeyName) > 0 then
+  begin
+    If Length(FromSuperKey) > 0 then
+      begin
+        If Length(KeyName) > Length(FromSuperKey) then
+          begin
+            If AnsiStartsText(FromSuperKey,KeyName) and (KeyName[Length(FromSuperKey) + 1] = REG_PATH_DELIMITER) then
+              ReplacedPath := ConcatKeyNames(ToSuperKey,Copy(KeyName,Length(FromSuperKey) + 2,Length(KeyName)))
+            else
+              Result := False;
+          end
+        else If AnsiSameText(KeyName,FromSuperKey) then
+          ReplacedPath := ToSuperKey
+        else
+          Result := False;
+      end
+    else ReplacedPath := ConcatKeyNames(ToSuperKey,KeyName);
+  end
+else If Length(FromSuperKey) <= 0 then
+  ReplacedPath := ToSuperKey
+else
+  Result := False;
+end;
+
+{-------------------------------------------------------------------------------
+    TRegistryEx - internal functions - key handles operations
+-------------------------------------------------------------------------------}
+
+Function IsPredefinedKey(Key: HKEY): Boolean;
+begin
+If (Key and $80000000) <> 0 then
+  Result := Byte(Key and $FF) in [0,1,2,3,4,5,6,7,$50,$60]
+else
+  Result := False;
+end;
+
+{-------------------------------------------------------------------------------
+    TRegistryEx - internal functions - translations and conversions
+-------------------------------------------------------------------------------}
 
 Function TranslateAccessRights(AccessRights: DWORD): TRXKeyAccessRights; overload;
 
@@ -1464,59 +1555,6 @@ begin
 Result := PredefinedKeyToShortStr(TranslatePredefinedKey(PredefinedKey));
 end;
 
-//------------------------------------------------------------------------------
-
-//------------------------------------------------------------------------------
-
-(*
-  HKEY_CLASSES_ROOT                = HKEY($80000000);
-  HKEY_CURRENT_USER                = HKEY($80000001);
-  HKEY_LOCAL_MACHINE               = HKEY($80000002);
-  HKEY_USERS                       = HKEY($80000003);
-  HKEY_PERFORMANCE_DATA            = HKEY($80000004);
-  HKEY_PERFORMANCE_TEXT            = HKEY($80000050);
-  HKEY_PERFORMANCE_NLSTEXT         = HKEY($80000060);
-  HKEY_CURRENT_CONFIG              = HKEY($80000005);
-  HKEY_DYN_DATA                    = HKEY($80000006);
-  HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
-
-HKEY_CLASSES_ROOT 
-HKEY_CURRENT_USER 
-HKEY_LOCAL_MACHINE 
-HKEY_USERS 
-
-*)
-
-Function IsUnOpenablePredefKey(Key: HKEY): Boolean;
-begin
-If (Key and $80000000) <> 0 then
-  Result := Byte(Key and $FF) in [4,5,6,7,$50,$60]
-else
-  Result := False;
-end;
-
-Function IsPredefinedKey(Key: HKEY): Boolean;
-begin
-If (Key and $80000000) <> 0 then
-  Result := Byte(Key and $FF) in [0,1,2,3,4,5,6,7,$50,$60]
-else
-  Result := False;
-end;
-
-Function IsOpenablePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; overload;
-begin
-Result := PredefinedKey in [pkClassesRoot,pkCurrentUser,pkLocalMachine,pkUsers]
-end;
-
-Function IsOpenablePredefinedKey(PredefinedKey: HKEY): Boolean; overload;
-begin
-If IsPredefinedKey(PredefinedKey) then
-  Result := IsOpenablePredefinedKey(TranslatePredefinedKey(PredefinedKey))
-else
-  Result := False;
-end;
-
-
 
 {===============================================================================
     TRegistryEx - class declaration
@@ -1631,10 +1669,10 @@ end;
 
 Function TRegistryEx.GetCurrentKeyPath: String;
 begin
-If Length(fCurrentKeyName) > 0 then
+If fCurrentKeyHandle <> 0 then
   Result := ConcatKeyNames(RootKeyString,fCurrentKeyName)
 else
-  result := '';
+  Result := '';
 end;
 
 //------------------------------------------------------------------------------
@@ -1715,6 +1753,7 @@ procedure TRegistryEx.ChangeCurrentKey(KeyHandle: HKEY; const KeyName: String);
 begin
 fCurrentKeyHandle := KeyHandle;
 fCurrentKeyName := KeyName;
+fCurrentKeyAccessRights := fAccessRights;
 end;
 
 //------------------------------------------------------------------------------
@@ -1740,6 +1779,34 @@ var
   WorkingKeyName: String;
 begin
 Result := GetWorkingKey(Relative,WorkingKeyName);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.CurrentKeyIsSubKeyOf(RootKey: TRXPredefinedKey; const KeyName: String; Strict: Boolean): Boolean;
+begin
+If (fCurrentKeyHandle <> 0) and (TranslatePredefinedKey(RootKey) = fRootKeyHandle) then
+  begin
+    If Strict then
+      Result := IsStrictSubKeyOf(fCurrentKeyName,KeyName)
+    else
+      Result := IsSubKeyOf(fCurrentKeyName,KeyName)
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.CurrentKeyIsSubKeyOf(const KeyName: String; Strict: Boolean): Boolean;
+begin
+If fCurrentKeyHandle <> 0 then
+  begin
+    If Strict then
+      Result := IsStrictSubKeyOf(fCurrentKeyName,KeyName)
+    else
+      Result := IsSubKeyOf(fCurrentKeyName,KeyName)
+  end
+else Result := False;
 end;
 
 //------------------------------------------------------------------------------
@@ -1842,7 +1909,6 @@ var
 begin
 SubKeys := TStringList.Create;
 try
-  {$message 'deal with current key'}
   GetSubKeys(Key,SubKeys);
   For i := 0 to Pred(SubKeys.Count) do
     SHDeleteKeyW(Key,PWideChar(StrToWide(SubKeys[i])))
@@ -2148,16 +2214,16 @@ var
                     Exit;
               end
             else Exit;
-        // if we are here, then all is good
       finally
         For i := 0 to Pred(SrcSubKeys.Count) do
           If Assigned(SrcSubKeys.Objects[i]) then
             AuxCloseKey(HKEY(SrcSubKeys.Objects[i]))
       end;
-      Result := True;
     finally
       FreeMem(PreallocatedBuffer,PREALLOC_BUFF_SIZE);
     end;
+    // if we are here, then all is good
+    Result := True;
   end;
 
 //--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
@@ -2834,6 +2900,7 @@ fRootKey := RootKey;
 fRemoteRootKey := False;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
+fCurrentKeyAccessRights := [];
 fFlushOnClose := False;
 fLastSysError := ERROR_SUCCESS;
 end;
@@ -2990,7 +3057,7 @@ var
   TempKey:      HKEY;
   Disposition:  DWORD;
 begin
-If CanCreate and (Length(KeyName) > 0) then
+If CanCreate and (Length(TrimKeyName(KeyName)) > 0) then
   begin
     Result := AuxCreateKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
       fAccessRightsSys,TempKey,TranslateCreateOptions(CreateOptions),@Disposition);
@@ -3025,7 +3092,7 @@ var
   WorkingKeyName: String;
   Disposition:    DWORD;
 begin
-If CanCreate and (Length(KeyName) > 0) then
+If CanCreate and (Length(TrimKeyName(KeyName)) > 0) then
   begin
     Result := AuxCreateKey(GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName),TrimKeyName(KeyName),
       fAccessRightsSys,TempKey,TranslateCreateOptions(CreateOptions),@Disposition);
@@ -3185,15 +3252,22 @@ Function TRegistryEx.DeleteKey(RootKey: TRXPredefinedKey; const KeyName: String;
 var
   CurrentIsSubKey:  Boolean;
 begin
-{$message 'rewisit'}
-CurrentIsSubKey := (fCurrentKeyHandle <> 0) and ((RootKey = Self.RootKey) and IsSubKeyOf(fCurrentKeyName,TrimKeyName(KeyName)));
+{
+  Check whether current key is a subkey (or matches) the key we are about to
+  delete - current key must be open, root key must match (must be compared on
+  hadle to account for remote roots) and a name must mark a subkey.
+}
+CurrentIsSubKey := CurrentKeyIsSubKeyOf(RootKey,TrimKeyName(KeyName),False);
 If not CurrentIsSubKey or CanDeleteCurrentKey then
-  Result := SHDeleteKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS
+  Result := CheckErrorCode(SHDeleteKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName)))))
 else
   Result := False;
-CurrentKeyClosed := CurrentIsSubKey and CanDeleteCurrentKey;
-If Result and CurrentKeyClosed then
-  CloseKey;
+If Result and CurrentIsSubKey and CanDeleteCurrentKey then
+  begin
+    CloseKey;
+    CurrentKeyClosed := True;
+  end
+else CurrentKeyClosed := False;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3204,17 +3278,18 @@ var
   WorkingKeyName:   String;
   CurrentIsSubKey:  Boolean;
 begin
-{$message 'rewisit'}
 WorkingKey := GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName);
-CurrentIsSubKey := (fCurrentKeyHandle <> 0) and ((RootKey = Self.RootKey) and
-                   IsSubKeyOf(fCurrentKeyName,ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName))));
+CurrentIsSubKey := CurrentKeyIsSubKeyOf(ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)),False);
 If not CurrentIsSubKey or CanDeleteCurrentKey then
   Result := SHDeleteKeyW(WorkingKey,PWideChar(StrToWide(TrimKeyName(KeyName)))) = ERROR_SUCCESS
 else
   Result := False;
-CurrentKeyClosed := CurrentIsSubKey and CanDeleteCurrentKey;
-If Result and CurrentKeyClosed then
-  CloseKey;
+If Result and CurrentIsSubKey and CanDeleteCurrentKey then
+  begin
+    CloseKey;
+    CurrentKeyClosed := True;
+  end
+else CurrentKeyClosed := False;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3257,6 +3332,7 @@ If fCurrentKeyHandle <> 0 then
   end;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
+fCurrentKeyAccessRights := [];
 end;
 
 //------------------------------------------------------------------------------
@@ -3665,14 +3741,21 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TRegistryEx.DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String);
+procedure TRegistryEx.DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String; out CurrentKeyClosed: Boolean);
 var
   TempKey:  HKEY;
 begin
+CurrentKeyClosed := False;
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
   KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteSubKeys(TempKey);
+    // close current key if it was deleted
+    If CurrentKeyIsSubKeyOf(RootKey,TrimKeyName(KeyName),True) then
+      begin
+        CloseKey;
+        CurrentKeyClosed := True;
+      end;
   finally
     AuxCloseKey(TempKey);
   end;
@@ -3680,14 +3763,23 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-procedure TRegistryEx.DeleteSubKeys(const KeyName: String);
+procedure TRegistryEx.DeleteSubKeys(const KeyName: String; out CurrentKeyClosed: Boolean);
 var
-  TempKey:  HKEY;
+  WorkingKey:     HKEY;
+  WorkingKeyName: String;
+  TempKey:        HKEY;
 begin
-If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),
-  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+CurrentKeyClosed := False;
+WorkingKey := GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName);
+If AuxOpenKey(WorkingKey,TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or
+  KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
   try
     DeleteSubKeys(TempKey);
+    If CurrentKeyIsSubKeyOf(ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)),True) then
+      begin
+        CloseKey;
+        CurrentKeyClosed := True;        
+      end;
   finally
     AuxCloseKey(TempKey);
   end;
@@ -3697,7 +3789,26 @@ end;
 
 procedure TRegistryEx.DeleteSubKeys;
 begin
+// this can never delete current key
 DeleteSubKeys(GetWorkingKey(True));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteSubKeys(RootKey: TRXPredefinedKey; const KeyName: String);
+var
+  Dummy:  Boolean;
+begin
+DeleteSubKeys(RootKey,KeyName,Dummy);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TRegistryEx.DeleteSubKeys(const KeyName: String);
+var
+  Dummy:  Boolean;
+begin
+DeleteSubKeys(KeyName,Dummy);
 end;
 
 //------------------------------------------------------------------------------
@@ -3796,33 +3907,104 @@ end;
 //------------------------------------------------------------------------------
 
 Function TRegistryEx.MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+var
+  NewCurrentKeyName:  String;
 begin
 Result := MoveKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
   TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
+// close current key if it was moved and reopen it from new location
+If Result and CurrentKeyIsSubKeyOf(SrcRootKey,TrimKeyName(SrcKeyName),False) then
+  begin
+    If ReplaceSuperKey(fCurrentKeyName,TrimKeyName(SrcKeyName),TrimKeyName(DstKeyName),NewCurrentKeyName) then
+      begin
+        // ensure the key will be reopened with the same access rights
+        SetAccessRights(fCurrentKeyAccessRights);
+        Result := OpenKey(DstRootKey,NewCurrentKeyName);
+      end
+    else
+      begin
+        SetErrorCode(ERROR_BAD_PATHNAME);
+        Result := False;
+      end;
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.MoveKey(SrcRootKey: TRXPredefinedKey; const SrcKeyName: String; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+var
+  DstWorkingKeyName:  String;
+  NewCurrentKeyName:  String;
 begin
 Result := MoveKey(TranslatePredefinedKey(SrcRootKey),TrimKeyName(SrcKeyName),
-  GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
+  GetWorkingKey(IsRelativeKeyName(DstKeyName),DstWorkingKeyName),TrimKeyName(DstKeyName),
+  CopySecurityDescriptors,True);
+If Result and CurrentKeyIsSubKeyOf(SrcRootKey,TrimKeyName(SrcKeyName),False) then
+  begin
+    If ReplaceSuperKey(fCurrentKeyName,TrimKeyName(SrcKeyName),
+      ConcatKeyNames(DstWorkingKeyName,TrimKeyName(DstKeyName)),NewCurrentKeyName) then
+      begin
+        SetAccessRights(fCurrentKeyAccessRights);
+        Result := OpenKey(fRootKey,NewCurrentKeyName);
+      end
+    else
+      begin
+        SetErrorCode(ERROR_BAD_PATHNAME);
+        Result := False;
+      end;
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.MoveKey(const SrcKeyName: String; DstRootKey: TRXPredefinedKey; const DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+var
+  SrcWorkingKeyName:  String;
+  NewCurrentKeyName:  String;
 begin
-Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
+Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName),SrcWorkingKeyName),TrimKeyName(SrcKeyName),
   TranslatePredefinedKey(DstRootKey),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
+If Result and CurrentKeyIsSubKeyOf(TrimKeyName(SrcKeyName),False) then
+  begin
+    If ReplaceSuperKey(fCurrentKeyName,ConcatKeyNames(SrcWorkingKeyName,TrimKeyName(SrcKeyName)),
+      TrimKeyName(DstKeyName),NewCurrentKeyName) then
+      begin
+        SetAccessRights(fCurrentKeyAccessRights);
+        Result := OpenKey(DstRootKey,NewCurrentKeyName);
+      end
+    else
+      begin
+        SetErrorCode(ERROR_BAD_PATHNAME);
+        Result := False;
+      end;
+  end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Function TRegistryEx.MoveKey(const SrcKeyName,DstKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+var
+  SrcWorkingKeyName:  String;
+  DstWorkingKeyName:  String;
+  NewCurrentKeyName:  String;
 begin
-Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName)),TrimKeyName(SrcKeyName),
-  GetWorkingKey(IsRelativeKeyName(DstKeyName)),TrimKeyName(DstKeyName),CopySecurityDescriptors,True);
+Result := MoveKey(GetWorkingKey(IsRelativeKeyName(SrcKeyName),SrcWorkingKeyName),TrimKeyName(SrcKeyName),
+  GetWorkingKey(IsRelativeKeyName(DstKeyName),DstWorkingKeyName),TrimKeyName(DstKeyName),
+  CopySecurityDescriptors,True);
+If Result and CurrentKeyIsSubKeyOf(TrimKeyName(SrcKeyName),False) then
+  begin
+    If ReplaceSuperKey(fCurrentKeyName,ConcatKeyNames(SrcWorkingKeyName,TrimKeyName(SrcKeyName)),
+      ConcatKeyNames(DstWorkingKeyName,TrimKeyName(DstKeyName)),NewCurrentKeyName) then
+      begin
+        SetAccessRights(fCurrentKeyAccessRights);
+        Result := OpenKey(fRootKey,NewCurrentKeyName);
+      end
+    else
+      begin
+        SetErrorCode(ERROR_BAD_PATHNAME);
+        Result := False;
+      end;
+  end;
 end;
 
 //------------------------------------------------------------------------------
