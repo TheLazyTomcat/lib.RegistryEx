@@ -47,6 +47,27 @@ type
     System constants
 ===============================================================================}
 {-------------------------------------------------------------------------------
+    System constants - security information
+-------------------------------------------------------------------------------}
+const
+  //possible values for SecurityDescriptorCopyInfo property
+  OWNER_SECURITY_INFORMATION               = $00000001;
+  GROUP_SECURITY_INFORMATION               = $00000002;
+  DACL_SECURITY_INFORMATION                = $00000004;
+  SACL_SECURITY_INFORMATION                = $00000008;
+  LABEL_SECURITY_INFORMATION               = $00000010;
+  ATTRIBUTE_SECURITY_INFORMATION           = $00000020;
+  SCOPE_SECURITY_INFORMATION               = $00000040;
+  PROCESS_TRUST_LABEL_SECURITY_INFORMATION = $00000080;
+  ACCESS_FILTER_SECURITY_INFORMATION       = $00000100;
+  BACKUP_SECURITY_INFORMATION              = $00010000;
+
+  PROTECTED_DACL_SECURITY_INFORMATION      = $80000000;
+  PROTECTED_SACL_SECURITY_INFORMATION      = $40000000;
+  UNPROTECTED_DACL_SECURITY_INFORMATION    = $20000000;
+  UNPROTECTED_SACL_SECURITY_INFORMATION    = $10000000;
+
+{-------------------------------------------------------------------------------
     System constants - registry access rights
 -------------------------------------------------------------------------------}
 const
@@ -303,6 +324,7 @@ type
     TRegistryEx - class declaration
 ===============================================================================}
 {$message 'todo: RegNotifyChangeKeyValue'}
+{$message 'write some sensible description (behavioral classes and error reporting)'}
 type
   TRegistryEx = class(TCustomObject)
   protected
@@ -316,6 +338,7 @@ type
     fCurrentKeyAccessRights:  TRXKeyAccessRights;
     fFlushOnClose:            Boolean;
     fLastSysError:            Integer;
+    fSecDesrCopyInfo:         DWORD;
     //--- getters, setters ---
     procedure SetAccessRightsSys(Value: DWORD); virtual;
     procedure SetAccessRights(Value: TRXKeyAccessRights); virtual;
@@ -390,13 +413,13 @@ type
     procedure Initialize(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights); virtual;
     procedure Finalize; virtual;
   public
-  {
-    If functions RegistryQuota* fail to obtain the number, they will return 0.
-  }
     constructor Create(RootKey: TRXPredefinedKey; AccessRights: TRXKeyAccessRights = karAllAccess); overload;
     constructor Create(AccessRights: TRXKeyAccessRights = karAllAccess); overload;  // root key is set to pkCurrentUser
     destructor Destroy; override;
     //--- global registry functions ---
+  {
+    If functions RegistryQuota* fail to obtain the number, they will return 0.
+  }    
     Function RegistryQuotaAllowed: UInt32; virtual;
     Function RegistryQuotaUsed: UInt32; virtual;
     Function DisablePredefinedCache(AllKeys: Boolean): Boolean; virtual;
@@ -548,8 +571,8 @@ type
     there is no way of directly changing registry key name, it is instead
     copied and the original is then deleted.
   }
- {A}Function RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String): Boolean; overload; virtual;
- //{B}Function RenameKey(const OldKeyName,NewKeyName: String): Boolean; overload; virtual;
+ {A}Function RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
+ {B}Function RenameKey(const OldKeyName,NewKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean; overload; virtual;
   {
     CopyValue copies value from one arbitrary key into another arbitrary key.
   }
@@ -962,6 +985,11 @@ type
   }
     property FlushOnClose: Boolean read fFlushOnClose write fFlushOnClose;
     property LastSystemError: Integer read fLastSysError;
+  {
+    SecurityDescriptorCopyInfo denotes what information will be loaded and
+    saved when copying security descriptors (used in key copy, move and rename).
+  }
+    property SecurityDescriptorCopyInfo: DWORD read fSecDesrCopyInfo write fSecDesrCopyInfo;
   end;
 
 implementation
@@ -985,7 +1013,7 @@ uses
 ===============================================================================}
 const
   UNICODE_STRING_MAX_CHARS = 32767;
-  _DELETE                  = $00010000;
+  _DELETE                  = $00010000; // cannot use "DELETE" - conflict with function of the same name
   READ_CONTROL             = $00020000;
   ERROR_INCORRECT_SIZE     = 1462;
   ERROR_DATATYPE_MISMATCH  = 1629;
@@ -996,28 +1024,12 @@ type
   LSTATUS = Int32;
 
 //------------------------------------------------------------------------------
-
 const
-  OWNER_SECURITY_INFORMATION               = $00000001;
-  GROUP_SECURITY_INFORMATION               = $00000002;
-  DACL_SECURITY_INFORMATION                = $00000004;
-//SACL_SECURITY_INFORMATION                = $00000008; // requires higher security privilege for the process
-  LABEL_SECURITY_INFORMATION               = $00000010;
-  ATTRIBUTE_SECURITY_INFORMATION           = $00000020;
-  SCOPE_SECURITY_INFORMATION               = $00000040;
-  PROCESS_TRUST_LABEL_SECURITY_INFORMATION = $00000080;
-  ACCESS_FILTER_SECURITY_INFORMATION       = $00000100;
-  BACKUP_SECURITY_INFORMATION              = $00010000;
-
-  PROTECTED_DACL_SECURITY_INFORMATION      = $80000000;
-  PROTECTED_SACL_SECURITY_INFORMATION      = $40000000;
-  UNPROTECTED_DACL_SECURITY_INFORMATION    = $20000000;
-  UNPROTECTED_SACL_SECURITY_INFORMATION    = $10000000;
-
+  // default value for SecurityDescriptorCopyInfo property
   SECINFO_NORMAL = OWNER_SECURITY_INFORMATION or
                    GROUP_SECURITY_INFORMATION or
-                   DACL_SECURITY_INFORMATION  or
-                 //SACL_SECURITY_INFORMATION  or
+                   DACL_SECURITY_INFORMATION or
+                 //SACL_SECURITY_INFORMATION or   // requires special security privilege for the process
                    LABEL_SECURITY_INFORMATION or
                    ATTRIBUTE_SECURITY_INFORMATION or
                    SCOPE_SECURITY_INFORMATION or
@@ -1322,6 +1334,45 @@ else If Length(FromSuperKey) <= 0 then
   ReplacedPath := ToSuperKey
 else
   Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function IsMultiLevelKeyPath(const KeyName: String): Boolean;
+var
+  i:  TStrOff;
+begin
+Result := False;
+For i := 1 to Length(KeyName) do
+  If KeyName[i] = REG_PATH_DELIMITER then
+    begin
+      Result := True;
+      Break{For i};
+    end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function RemoveLowestKeyPathLevel(const KeyName: String): String;
+var
+  i:  TStrOff;
+begin
+If Length(KeyName) > 0 then
+  begin
+    i := Length(KeyName);
+    while i >= 1 do
+      begin
+        If KeyName[i] = REG_PATH_DELIMITER then
+          Break{while}
+        else
+          Dec(i);
+      end;
+    If i > 0 then
+      Result := Copy(KeyName,1,i - 1)
+    else
+      Result := '';
+  end
+else Result := '';
 end;
 
 {-------------------------------------------------------------------------------
@@ -2135,7 +2186,8 @@ var
             // other errors
             Break{while};
           end;
-          Inc(i);
+          If not DeleteSource then
+            Inc(i);
         end;
     end;
 
@@ -2148,19 +2200,19 @@ var
     begin
       Result := False;
       Size := PREALLOC_BUFF_SIZE;
-      case SetErrorCode(RegGetKeySecurity(FromKey,SECINFO_NORMAL,PreallocatedBuffer,Size)) of
+      case SetErrorCode(RegGetKeySecurity(FromKey,fSecDesrCopyInfo,PreallocatedBuffer,Size)) of
         ERROR_INSUFFICIENT_BUFFER:
           begin
             GetMem(Buffer,Size);
             try
-              If CheckErrorCode(RegGetKeySecurity(FromKey,SECINFO_NORMAL,Buffer,Size)) then
-                Result := CheckErrorCode(RegSetKeySecurity(ToKey,SECINFO_NORMAL,Buffer));
+              If CheckErrorCode(RegGetKeySecurity(FromKey,fSecDesrCopyInfo,Buffer,Size)) then
+                Result := CheckErrorCode(RegSetKeySecurity(ToKey,fSecDesrCopyInfo,Buffer));
             finally
               FreeMem(Buffer,Size);
             end;
           end;
         ERROR_SUCCESS:
-          Result := CheckErrorCode(RegSetKeySecurity(ToKey,SECINFO_NORMAL,PreallocatedBuffer));
+          Result := CheckErrorCode(RegSetKeySecurity(ToKey,fSecDesrCopyInfo,PreallocatedBuffer));
         // other values are treated as fail-worthy errors    
       end;
     end;
@@ -2903,6 +2955,7 @@ fCurrentKeyName := '';
 fCurrentKeyAccessRights := [];
 fFlushOnClose := False;
 fLastSysError := ERROR_SUCCESS;
+fSecDesrCopyInfo := SECINFO_NORMAL;
 end;
 
 //------------------------------------------------------------------------------
@@ -4009,115 +4062,73 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function IsMultiLevelKeyPath(const KeyName: String): Boolean;
+Function TRegistryEx.RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
 var
-  i:  TStrOff;
+  OldKeyWorkName: String;
+  NewKeyWorkName: String;
 begin
 Result := False;
-For i := 1 to Length(KeyName) do
-  If KeyName[i] = REG_PATH_DELIMITER then
-    begin
-      Result := True;
-      Break{For i};
-    end;
-end;
-
-Function ExtractLowestKeyPathLevel(const KeyName: String): String;
-var
-  i:  TStrOff;
-begin
-If Length(KeyName) > 0 then
+OldKeyWorkName := TrimKeyName(OldKeyName);
+NewKeyWorkName := TrimKeyName(NewKeyName);
+If (Length(OldKeyWorkName) > 0) and (Length(NewKeyWorkName) > 0) then
   begin
-    i := Length(KeyName);
-    while i >= 1 do
+    If IsMultiLevelKeyPath(OldKeyWorkName) then
       begin
-        If KeyName[i] = REG_PATH_DELIMITER then
-          Break{while}
-        else
-          Dec(i);
-      end;
-    Result := Copy(KeyName,i + 1,Length(KeyName));
-  end
-else Result := '';
-end;
-
-Function RemoveLowestKeyPathLevel(const KeyName: String): String;
-var
-  i:  TStrOff;
-begin
-If Length(KeyName) > 0 then
-  begin
-    i := Length(KeyName);
-    while i >= 1 do
-      begin
-        If KeyName[i] = REG_PATH_DELIMITER then
-          Break{while}
-        else
-          Dec(i);
-      end;
-    If i > 0 then
-      Result := Copy(KeyName,1,i - 1)
-    else
-      Result := '';
-  end
-else Result := '';
-end;
-
-{
-  old, new - is multilevel path?
-
-  OLD or not(NEW)
-
-  old   new   ok
-  0     0     1
-  0     1     0
-  1     0     1
-  1     1     1
-}
-{$message 'todo'}
-Function TRegistryEx.RenameKey(RootKey: TRXPredefinedKey; const OldKeyName,NewKeyName: String): Boolean;
-var
-  OldKeyNameTrim: String;
-  NewKeyNameTrim: String;
-  OldMultiLevel:  Boolean;
-  NewMultiLevel:  Boolean;
-begin
-Result := False;
-OldKeyNameTrim := TrimKeyName(OldKeyName);
-NewKeyNameTrim := TrimKeyName(NewKeyName);
-If (Length(OldKeyNameTrim) > 0) and (Length(NewKeyNameTrim) > 0) then
-  begin
-    OldMultiLevel := IsMultiLevelKeyPath(OldKeyNameTrim);
-    NewMultiLevel := IsMultiLevelKeyPath(NewKeyNameTrim);
-    If IsMultiLevelKeyPath(OldKeyNameTrim) then
-      begin
-        If IsMultiLevelKeyPath(NewKeyNameTrim) then
+        If IsMultiLevelKeyPath(NewKeyWorkName) then
           begin
+          {
+            Both old and new names are multilevel. Compare if the paths,
+            excluding lowest level, match. If so, do the move, if not, signal
+            error.
+
+            Note that if they are the same, the move will fail with error being
+            ERROR_ALREADY_EXISTS.
+          }
+            If AnsiSameText(RemoveLowestKeyPathLevel(OldKeyWorkName),
+              RemoveLowestKeyPathLevel(NewKeyWorkName)) then
+              Result := MoveKey(RootKey,OldKeyWorkName,RootKey,NewKeyWorkName,CopySecurityDescriptors)
+            else
+              SetErrorCode(ERROR_BAD_PATHNAME);
           end
         else
           begin
+          {
+            Old is multilevel, new is simple - replace lowest level in old name
+            with the new name.
+          }
+            Result := MoveKey(RootKey,OldKeyWorkName,RootKey,ConcatKeyNames(
+              RemoveLowestKeyPathLevel(OldKeyWorkName),NewKeyWorkName),CopySecurityDescriptors);
           end;
       end
     else
       begin
-        If not IsMultiLevelKeyPath(NewKeyNameTrim) then
-          begin
-            // both old and new are simple names
-            //MoveKey()
-          end
-        else Exit;  // invalid combination
+        If not IsMultiLevelKeyPath(NewKeyWorkName) then
+          // both old and new are simple names
+          Result := MoveKey(RootKey,OldKeyWorkName,RootKey,NewKeyWorkName,CopySecurityDescriptors)
+        else
+          // invalid combination
+          SetErrorCode(ERROR_BAD_PATHNAME);
       end;
-    (*
-    // if NewMultiLevel is true, then OldMultiLevel mut be too
-    If OldMultiLevel or not(NewMultiLevel) then
-      begin
-        If NewMultiLevel then
-          begin
-
-          end;
-      end;
-    *)
   end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.RenameKey(const OldKeyName,NewKeyName: String; CopySecurityDescriptors: Boolean = False): Boolean;
+var
+  OldKeyWorkName: String;
+  NewKeyWorkName: String;
+begin
+// get full paths and then just call the first overload
+If IsRelativeKeyName(OldKeyName) then
+  OldKeyWorkName := ConcatKeyNames(fCurrentKeyName,TrimKeyName(OldKeyName))
+else
+  OldKeyWorkName := TrimKeyName(OldKeyName);
+If IsRelativeKeyName(NewKeyName) then
+  NewKeyWorkName := ConcatKeyNames(fCurrentKeyName,TrimKeyName(NewKeyName))
+else
+  NewKeyWorkName := TrimKeyName(NewKeyName);
+Result := RenameKey(fRootKey,OldKeyWorkName,NewKeyWorkName,CopySecurityDescriptors);
 end;
 
 //------------------------------------------------------------------------------
