@@ -320,6 +320,25 @@ type
     DataSize:   TMemSize;
   end;
 
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
+  TRXPrivilegeStatus = (psError,psRemoved,psDisabled,psEnabled,psEnabledDefault);
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
+  TRXFileFormat = (ffStandardFormat,ffLatestFormat,ffNoCompression);
+
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
+  TRXRestoreFlag = (rfWholeHiveVolatile,rfRefreshHive,rfNoLazyFlush,
+                    rfForceRestore,rfAppHive,rfProcessPrivate,rfStartJournal,
+                    rfHiveExactFileGrowth,rfHiveNoRM,rfHiveSingleLog,
+                    rfBootHive,rfLoadHiveOpenHandle,rfFlushHiveFileGrowth,
+                    rfOpenReadOnly,rfImmutable,rfNoImpersonationFallback,
+                    rfAppHiveOpenReadOnly);
+
+  TRXRestoreFlags = set of TRXRestoreFlag;
+
 {===============================================================================
     TRegistryEx - class declaration
 ===============================================================================}
@@ -328,13 +347,46 @@ type
   Following functions, when they fail, will store an error code indicating the
   cause of failure in property LastSystemError:
 
-    RegistryQuota*, DisablePredefinedCache, ConnectRegistry,
-    OverridePredefinedKey, RestorePredefinedKey, OpenKey, OpenKeyReadOnly,
-    KeyExists, CreateKey, DeleteKey, GetKeyInfo, HasSubKeys, GetSubKeys,
-    GetValueInfo, HasValues, GetValues, GetValueType, GetValueDataSize,
-    ValueExists, ValueOfTypeExists, DeleteValue, DeleteSubKeys, DeleteValues,
-    DeleteContent, CopyKey, MoveKey, RenameKey, CopyValue*, MoveValue*,
-    RenameValue, TryRead*, Read*Def
+    RegistryQuota*
+    DisablePredefinedCache
+    ConnectRegistry
+    OverridePredefinedKey
+    RestorePredefinedKey
+    OpenKey
+    OpenKeyReadOnly
+    KeyExists
+    CreateKey
+    DeleteKey
+    GetKeyInfo
+    HasSubKeys
+    GetSubKeys
+    GetValueInfo
+    HasValues
+    GetValues
+    GetValueType
+    GetValueDataSize
+    ValueExists
+    ValueOfTypeExists
+    DeleteValue
+    DeleteSubKeys
+    DeleteValues
+    DeleteContent
+    CopyKey
+    MoveKey
+    RenameKey
+    CopyValue*
+    MoveValue*
+    RenameValue 
+    Query*Privilege
+    Enable*Privilege
+    Disable*Privilege
+    SaveKey
+    RestoreKey
+    LoadKey
+    UnloadKey
+    ReplaceKey
+    TryRead*
+    Read*Def
 
   Depending of how a key to work on/with is selected, there are several
   behavioral classes of some public methods (they are marked with appropriate
@@ -377,6 +429,7 @@ type
     fRootKeyHandle:           HKEY;
     fRootKey:                 TRXPredefinedKey;
     fRemoteRootKey:           Boolean;
+    fCloseRootKey:            Boolean;
     fCurrentKeyHandle:        HKEY;
     fCurrentKeyName:          String;
     fCurrentKeyAccessRights:  TRXKeyAccessRights;
@@ -396,6 +449,7 @@ type
     //--- auxiliaty methods ---
     Function SetErrorCode(ErrorCode: Integer): Integer; virtual;
     Function CheckErrorCode(ErrorCode: Integer; AllowMoreDataErr: Boolean = False): Boolean; virtual;
+    Function SysCallError(CallResult: BOOL): Boolean; virtual;
     Function AuxCreateKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY;
       CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean; overload; virtual;
     Function AuxOpenKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
@@ -412,6 +466,8 @@ type
     Function GetValues(Key: HKEY; Values: TStrings): Boolean; overload; virtual;
     Function DeleteSubKeys(Key: HKEY): Boolean; overload; virtual;
     Function DeleteValues(Key: HKEY): Boolean; overload; virtual;
+    Function QueryProcessPrivilege(const PrivilegeName: String): TRXPrivilegeStatus; virtual;
+    Function SetProcessPrivilege(const PrivilegeName: String; Enable: Boolean): Boolean; virtual;
     //--- copy/move auxiliaty methods ---
     Function MoveKey(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity,DeleteSource: Boolean): Boolean; overload; virtual;
     Function MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean; overload; virtual;
@@ -481,6 +537,20 @@ type
     possible needed logon is not managed.
   }
     Function ConnectRegistry(const MachineName: String; RootKey: TRXPredefinedKey): Boolean; virtual;
+  {
+    Sets root key to pkCurrentUserbut instead of using predefined key handle,
+    the handle is obtained using function RegOpenCurrentUser - meaning it is
+    bound to current user key of a user the calling thread is impersonating.
+  }
+    Function OpenCurrentUser(AccessRights: TRXKeyAccessRights = karAllAccess): Boolean; virtual;
+  {
+    Similarly to OpenCurrentUser, sets root key to pkClassesRootbut, but the
+    handle is obtained using function RegOpenUserClassesRoot - it is a handle
+    of classes root key belonging to a user identified by impersonation access
+    token that is passed in AccessToken parameter.
+    For more details, see documentation of RegOpenUserClassesRoot function.
+  }
+    Function OpenUserClassesRoot(AccessToken: THandle; AccessRights: TRXKeyAccessRights = karAllAccess): Boolean; virtual;
   {
     OverridePredefinedKey maps specified predefined registry key to another
     open key.
@@ -758,15 +828,59 @@ type
  {A}Function RenameValue(RootKey: TRXPredefinedKey; const KeyName,OldValueName,NewValueName: String): Boolean; overload; virtual;
  {B}Function RenameValue(const KeyName,OldValueName,NewValueName: String): Boolean; overload; virtual;
  {C}Function RenameValue(const OldValueName,NewValueName: String): Boolean; overload; virtual;
-
     //--- keys saving and loading ---
-    {$message 'todo'}
-    ////Function SaveKey(const Key, FileName: string): Boolean; virtual;
-    ////Function LoadKey(const Key, FileName: string): Boolean; virtual;
-    ////RegReplaceKey
-    ////RegRestoreKey
-    ////UnLoadKey
+  {
+    See further...
+  }
+    Function QueryBackupPrivilege: TRXPrivilegeStatus; virtual;
+    Function EnableBackupPrivilege: Boolean; virtual;
+    Function DisableBackupPrivilege: Boolean; virtual;
+    Function QueryRestorePrivilege: TRXPrivilegeStatus; virtual;
+    Function EnableRestorePrivilege: Boolean; virtual;
+    Function DisableRestorePrivilege: Boolean; virtual;
+  {
+    Following functions are only simple wrappers for backup and restore
+    registry functions. More detailed implementation is beyond the scope of
+    this library.
 
+    All presented functions require for the calling process to have special
+    privileges enabled, otherwise they will fail. Namely SeBackupPrivilege and
+    SeRestorePrivilege must be present in access token and must be enabled
+    (exception being SaveKey functions - they require only backup privilege).
+
+    For this, Query*Privilege, Enable*Privilege and Disable*Privilege methods
+    are provided - use them to get a state of mentioned privileges and
+    potentially enable or disable them.
+
+      WARNING - it is not possible to add privilege to acess token, and none of
+                the required privilege is present for normal precesses.
+                So if you need to use those functions, make sure the process is
+                run with administrator privileges (then the required privileges
+                are present, but disabled - you can enable them).
+  }
+ {A}Function SaveKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean; overload; virtual;
+ {B}Function SaveKey(const KeyName,FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean; overload; virtual;
+ {C}Function SaveKey(const FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean; overload; virtual;
+ {A}Function RestoreKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean; overload; virtual;
+ {B}Function RestoreKey(const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean; overload; virtual;
+ {C}Function RestoreKey(const FileName: String; Flags: TRXRestoreFlags = []): Boolean; overload; virtual;
+  {
+    RootKey parameter in LoadKey and UnLoadKey can only be set to pkUsers or
+    pkLocalMachine, otherwise the function will fail.
+    KeyName must not be empty and cannot be a path, only a simple key name.
+  }
+    Function LoadKey(RootKey: TRXPredefinedKey; const KeyName, FileName: String): Boolean; virtual;
+    Function UnLoadKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; virtual;
+  {
+    WARNING - considering how RegReplaceKey (which is internally called) works,
+              using this function can be very dangerous. There is a good chance
+              to completely erase registry hive when used inappropriately.
+              Please refer to documentation of Win32 function RegReplaceKey
+              for details.
+  }
+ {A}Function ReplaceKey(RootKey: TRXPredefinedKey; const KeyName,NewFileName,OldFileName: String): Boolean; overload; virtual;
+ {B}Function ReplaceKey(const KeyName,NewFileName,OldFileName: String): Boolean; overload; virtual;
+ {C}Function ReplaceKey(const NewFileName,OldFileName: String): Boolean; overload; virtual;
     //--- values write ---
   {
     When writing to other key than current or predefined, the key must already
@@ -1160,9 +1274,59 @@ const
   ERROR_DATATYPE_MISMATCH  = 1629;
 
 type
-  LONG    = LongInt;
-  LPBYTE  = ^Byte;
-  LSTATUS = Int32;
+  LONG              = LongInt;
+  LPBYTE            = ^Byte;
+  LSTATUS           = Int32;
+  HANDLE            = THandle;
+  PTOKEN_PRIVILEGES = ^TOKEN_PRIVILEGES;
+  LUID              = Int64;
+
+//------------------------------------------------------------------------------
+
+// statically linked functions
+Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
+
+Function RegOverridePredefKey(hKey: HKEY; hNewHKey: HKEY): LONG; stdcall; external 'advapi32.dll';
+
+Function RegDisablePredefinedCache: LONG; stdcall; external 'advapi32.dll';
+
+Function RegOpenCurrentUser(samDesired: REGSAM; phkResult: PHKEY): LONG; stdcall; external 'advapi32.dll';
+
+Function RegOpenUserClassesRoot(hToken: HANDLE; dwOptions: DWORD; samDesired: REGSAM; phkResult: PHKEY): LONG; stdcall; external 'advapi32.dll';
+
+Function RegEnumValueW(
+  hKey:           HKEY;
+  dwIndex:        DWORD;
+  lpValueName:    LPWSTR;
+  lpcchValueName: LPDWORD;
+  lpReserved:     LPDWORD;
+  lpType:         LPDWORD;
+  lpData:         LPBYTE;
+  lpcbData:       LPDWORD
+): LSTATUS; stdcall; external 'advapi32.dll';
+
+Function AdjustTokenPrivileges(
+  TokenHandle:          HANDLE;
+  DisableAllPrivileges: BOOL;
+  NewState:             PTOKEN_PRIVILEGES;
+  BufferLength:         DWORD;
+  PreviousState:        PTOKEN_PRIVILEGES;
+  ReturnLength:         PDWORD): BOOL; stdcall; external 'advapi32.dll';
+
+Function RegSaveKeyExW(hKey: HKEY; lpFile: LPCWSTR; lpSecurityAttributes: PSecurityAttributes; Flags: DWORD): LONG; stdcall; external 'advapi32.dll';
+
+Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'shlwapi.dll';
+
+Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
+
+//------------------------------------------------------------------------------
+
+// dynamically linked functions (might not be present on all systems - namely Windows XP)
+var
+  RegQueryReflectionKey:        Function(hBase: HKEY; bIsReflectionDisabled: PBOOL): LONG; stdcall = nil;
+  RegEnableReflectionKey:       Function(hBase: HKEY): LONG; stdcall = nil;
+  RegDisableReflectionKey:      Function(hBase: HKEY): LONG; stdcall = nil;
+  RegDisablePredefinedCacheEx:  Function: LONG; stdcall = nil;
 
 //------------------------------------------------------------------------------
 const
@@ -1181,39 +1345,6 @@ const
                    PROTECTED_SACL_SECURITY_INFORMATION or
                    UNPROTECTED_DACL_SECURITY_INFORMATION or
                    UNPROTECTED_SACL_SECURITY_INFORMATION;
-
-//------------------------------------------------------------------------------
-
-// statically linked functions
-Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
-
-Function RegOverridePredefKey(hKey: HKEY; hNewHKey: HKEY): LONG; stdcall; external 'advapi32.dll';
-
-Function RegDisablePredefinedCache: LONG; stdcall; external 'advapi32.dll';
-
-Function RegEnumValueW(
-  hKey:           HKEY;
-  dwIndex:        DWORD;
-  lpValueName:    LPWSTR;
-  lpcchValueName: LPDWORD;
-  lpReserved:     LPDWORD;
-  lpType:         LPDWORD;
-  lpData:         LPBYTE;
-  lpcbData:       LPDWORD
-): LSTATUS; stdcall; external 'advapi32.dll';
-
-Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; external 'shlwapi.dll';
-
-Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
-
-//------------------------------------------------------------------------------
-
-// dynamically linked functions (might not be present on all systems - namely Windows XP)
-var
-  RegQueryReflectionKey:        Function(hBase: HKEY; bIsReflectionDisabled: PBOOL): LONG; stdcall = nil;
-  RegEnableReflectionKey:       Function(hBase: HKEY): LONG; stdcall = nil;
-  RegDisableReflectionKey:      Function(hBase: HKEY): LONG; stdcall = nil;
-  RegDisablePredefinedCacheEx:  Function: LONG; stdcall = nil;
 
 {===============================================================================
     TRegistryEx - internal functions
@@ -1747,6 +1878,49 @@ begin
 Result := PredefinedKeyToShortStr(TranslatePredefinedKey(PredefinedKey));
 end;
 
+//------------------------------------------------------------------------------
+
+Function TranslateFileFormat(FileFormat: TRXFileFormat): DWORD;
+begin
+case FileFormat of
+  ffStandardFormat: Result := REG_STANDARD_FORMAT;
+  ffLatestFormat:   Result := REG_LATEST_FORMAT;
+  ffNoCompression:  Result := REG_NO_COMPRESSION;
+else
+  raise ERXInvalidValue.CreateFmt('TranslateFileFormat: Invalid format (%d).',[Ord(FileFormat)]);
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TranslateRestoreFlags(RestoreFlags: TRXRestoreFlags): DWORD;
+
+  procedure SetResultRestoreFlag(RestoreFlag: TRXRestoreFlag; Flag: DWORD);
+  begin
+    If RestoreFlag in RestoreFlags then
+      Result := Result or Flag;
+  end;
+
+begin
+Result := 0;
+SetResultRestoreFlag(rfWholeHiveVolatile,REG_WHOLE_HIVE_VOLATILE);
+SetResultRestoreFlag(rfRefreshHive,REG_REFRESH_HIVE);
+SetResultRestoreFlag(rfNoLazyFlush,REG_NO_LAZY_FLUSH);
+SetResultRestoreFlag(rfForceRestore,REG_FORCE_RESTORE);
+SetResultRestoreFlag(rfAppHive,REG_APP_HIVE);
+SetResultRestoreFlag(rfProcessPrivate,REG_PROCESS_PRIVATE);
+SetResultRestoreFlag(rfStartJournal,REG_START_JOURNAL);
+SetResultRestoreFlag(rfHiveExactFileGrowth,REG_HIVE_EXACT_FILE_GROWTH);
+SetResultRestoreFlag(rfHiveNoRM,REG_HIVE_NO_RM);
+SetResultRestoreFlag(rfHiveSingleLog,REG_HIVE_SINGLE_LOG);
+SetResultRestoreFlag(rfBootHive,REG_BOOT_HIVE);
+SetResultRestoreFlag(rfLoadHiveOpenHandle,REG_LOAD_HIVE_OPEN_HANDLE);
+SetResultRestoreFlag(rfFlushHiveFileGrowth,REG_FLUSH_HIVE_FILE_GROWTH);
+SetResultRestoreFlag(rfOpenReadOnly,REG_OPEN_READ_ONLY);
+SetResultRestoreFlag(rfImmutable,REG_IMMUTABLE);
+SetResultRestoreFlag(rfNoImpersonationFallback,REG_NO_IMPERSONATION_FALLBACK);
+SetResultRestoreFlag(rfAppHiveOpenReadOnly,REG_APP_HIVE_OPEN_READ_ONLY);
+end;
 
 {===============================================================================
     TRegistryEx - class declaration
@@ -1888,6 +2062,14 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.SysCallError(CallResult: BOOL): Boolean;
+begin
+fLastSysError := GetLastError;
+Result := CallResult;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.AuxCreateKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY; CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean;
 begin
 NewKey := 0;
@@ -1932,11 +2114,12 @@ end;
 
 procedure TRegistryEx.ChangeRootKey(KeyHandle: HKEY; Key: TRXPredefinedKey);
 begin
-If fRemoteRootKey then
+If fCloseRootKey then
   RegCloseKey(fRootKeyHandle);
 fRootKeyHandle := KeyHandle;
 fRootKey := Key;
 fRemoteRootKey := False;
+fCloseRootKey := False;
 end;
 
 //------------------------------------------------------------------------------
@@ -2146,6 +2329,78 @@ try
 finally
   Values.Free;
 end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.QueryProcessPrivilege(const PrivilegeName: String): TRXPrivilegeStatus;
+var
+  Token:        THandle;
+  RetLength:    DWORD;
+  Dummy:        DWORD;
+  Buffer:       Pointer;
+  PrivilegeID:  LUID;
+  PrivilegePtr: PLUIDAndAttributes;
+  i:            Integer;
+begin
+Result := psError;
+If SysCallError(OpenProcessToken(GetCurrentProcess,TOKEN_QUERY,Token)) then
+  try
+    SysCallError(GetTokenInformation(Token,TokenPrivileges,nil,0,RetLength));
+    If (fLastSysError = ERROR_INSUFFICIENT_BUFFER) and (RetLength > 0) then
+      begin
+        GetMem(Buffer,RetLength);
+        try
+          If SysCallError(GetTokenInformation(Token,TokenPrivileges,Buffer,RetLength,Dummy)) then
+            If SysCallError(LookupPrivilegeValue(nil,PChar(PrivilegeName),PrivilegeID)) then
+              begin
+                Result := psRemoved;
+                PrivilegePtr := Addr(PTokenPrivileges(Buffer)^.Privileges[0]);
+                For i := 1 to PTokenPrivileges(Buffer)^.PrivilegeCount do
+                  If PrivilegePtr^.Luid = PrivilegeID then
+                    begin
+                      If (PrivilegePtr^.Attributes and SE_PRIVILEGE_ENABLED_BY_DEFAULT) <> 0 then
+                        Result := psEnabledDefault
+                      else If (PrivilegePtr^.Attributes and SE_PRIVILEGE_ENABLED) <> 0 then
+                        Result := psEnabled
+                      else
+                        Result := psDisabled;
+                      Break{For i};
+                    end
+                  else Inc(PrivilegePtr);
+              end;
+        finally
+          FreeMem(Buffer,RetLength);
+        end;
+      end;
+  finally
+    CloseHandle(Token);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.SetProcessPrivilege(const PrivilegeName: String; Enable: Boolean): Boolean;
+var
+  Token:            THandle;
+  TokenPrivileges:  TTokenPrivileges;
+begin
+Result := False;
+If SysCallError(OpenProcessToken(GetCurrentProcess,TOKEN_QUERY or TOKEN_ADJUST_PRIVILEGES,Token)) then
+  try
+    If SysCallError(LookupPrivilegeValue(nil,PChar(PrivilegeName),TokenPrivileges.Privileges[0].Luid)) then
+      begin
+        TokenPrivileges.PrivilegeCount := 1;
+        If Enable then
+          TokenPrivileges.Privileges[0].Attributes := SE_PRIVILEGE_ENABLED
+        else
+          TokenPrivileges.Privileges[0].Attributes := 0;
+        If SysCallError(AdjustTokenPrivileges(Token,False,@TokenPrivileges,0,nil,nil)) then
+          Result := fLastSysError = ERROR_SUCCESS;
+      end;
+  finally
+    CloseHandle(Token);
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -3110,6 +3365,7 @@ fAccessRights := AccessRights;
 fRootKeyHandle := TranslatePredefinedKey(RootKey);
 fRootKey := RootKey;
 fRemoteRootKey := False;
+fCloseRootKey := False;
 fCurrentKeyHandle := 0;
 fCurrentKeyName := '';
 fCurrentKeyAccessRights := [];
@@ -3123,7 +3379,7 @@ end;
 procedure TRegistryEx.Finalize;
 begin
 CloseKey;
-If fRemoteRootKey then
+If fCloseRootKey then
   RegCloseKey(fRootKeyHandle);
 end;
 
@@ -3159,12 +3415,10 @@ var
   Allowed:  DWORD;
   Used:     DWORD;
 begin
-If not GetSystemRegistryQuota(@Allowed,@Used) then
-  begin
-    Result := 0;
-    SetErrorCode(GetLastError);
-  end
-else Result := UInt32(Allowed);
+If SysCallError(GetSystemRegistryQuota(@Allowed,@Used)) then
+  Result := UInt32(Allowed)
+else
+  Result := 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -3174,12 +3428,10 @@ var
   Allowed:  DWORD;
   Used:     DWORD;
 begin
-If not GetSystemRegistryQuota(@Allowed,@Used) then
-  begin
-    Result := 0;
-    SetErrorCode(GetLastError);
-  end
-else Result := UInt32(Used);
+If SysCallError(GetSystemRegistryQuota(@Allowed,@Used)) then
+  Result := UInt32(Used)
+else
+  Result := 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -3211,6 +3463,39 @@ If Result then
     CloseKey;
     ChangeRootKey(TempKey,RootKey);
     fRemoteRootKey := True;
+    fCloseRootKey := True;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.OpenCurrentUser(AccessRights: TRXKeyAccessRights = karAllAccess): Boolean;
+var
+  TempKey:  HKEY;
+begin
+TempKey := 0;
+Result := CheckErrorCode(RegOpenCurrentUser(TranslateAccessRights(AccessRights),@TempKey));
+If Result then
+  begin
+    CloseKey;
+    ChangeRootKey(TempKey,pkCurrentUser);
+    fCloseRootKey := True;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.OpenUserClassesRoot(AccessToken: THandle; AccessRights: TRXKeyAccessRights = karAllAccess): Boolean;
+var
+  TempKey:  HKEY;
+begin
+TempKey := 0;
+Result := CheckErrorCode(RegOpenUserClassesRoot(AccessToken,0,TranslateAccessRights(AccessRights),@TempKey));
+If Result then
+  begin
+    CloseKey;
+    ChangeRootKey(TempKey,pkClassesRoot);
+    fCloseRootKey := True;
   end;
 end;
 
@@ -4801,6 +5086,163 @@ end;
 Function TRegistryEx.RenameValue(const OldValueName,NewValueName: String): Boolean;
 begin
 Result := MoveValueIn(OldValueName,NewValueName);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.QueryBackupPrivilege: TRXPrivilegeStatus;
+begin
+Result := QueryProcessPrivilege('SeBackupPrivilege');
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.EnableBackupPrivilege: Boolean;
+begin
+Result := SetProcessPrivilege('SeBackupPrivilege',True);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.DisableBackupPrivilege: Boolean;
+begin
+Result := SetProcessPrivilege('SeBackupPrivilege',False);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.QueryRestorePrivilege: TRXPrivilegeStatus;
+begin
+Result := QueryProcessPrivilege('SeRestorePrivilege');
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.EnableRestorePrivilege: Boolean;
+begin
+Result := SetProcessPrivilege('SeRestorePrivilege',True);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.DisableRestorePrivilege: Boolean;
+begin
+Result := SetProcessPrivilege('SeRestorePrivilege',False);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.SaveKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+  try
+    Result := CheckErrorCode(RegSaveKeyExW(TempKey,PWideChar(StrToWide(FileName)),nil,TranslateFileFormat(FileFormat)));
+  finally
+    AuxCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.SaveKey(const KeyName,FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+  try
+    Result := CheckErrorCode(RegSaveKeyExW(TempKey,PWideChar(StrToWide(FileName)),nil,TranslateFileFormat(FileFormat)));
+  finally
+    AuxCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.SaveKey(const FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean;
+begin
+Result := CheckErrorCode(RegSaveKeyExW(GetWorkingKey(True),PWideChar(StrToWide(FileName)),nil,TranslateFileFormat(FileFormat)));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.RestoreKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+  try
+    Result := CheckErrorCode(RegRestoreKeyW(TempKey,PWideChar(StrToWide(FileName)),TranslateRestoreFlags(Flags)));
+  finally
+    AuxCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.RestoreKey(const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
+  try
+    Result := CheckErrorCode(RegRestoreKeyW(TempKey,PWideChar(StrToWide(FileName)),TranslateRestoreFlags(Flags)));
+  finally
+    AuxCloseKey(TempKey);
+  end
+else Result := False;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.RestoreKey(const FileName: String; Flags: TRXRestoreFlags = []): Boolean;
+begin
+Result := CheckErrorCode(RegRestoreKeyW(GetWorkingKey(True),PWideChar(StrToWide(FileName)),TranslateRestoreFlags(Flags)));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.LoadKey(RootKey: TRXPredefinedKey; const KeyName, FileName: String): Boolean;
+begin
+Result := CheckErrorCode(RegLoadKeyW(TranslatePredefinedKey(RootKey),
+  PWideChar(StrToWide(KeyName)),PWideChar(StrToWide(FileName))));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.UnLoadKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean;
+begin
+Result := CheckErrorCode(RegUnloadKeyW(TranslatePredefinedKey(RootKey),PWideChar(StrToWide(KeyName))));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ReplaceKey(RootKey: TRXPredefinedKey; const KeyName,NewFileName,OldFileName: String): Boolean;
+begin
+Result := CheckErrorCode(RegReplaceKeyW(
+  TranslatePredefinedKey(RootKey),PWideChar(StrToWide(TrimKeyName(KeyName))),
+  PWideChar(StrToWide(NewFileName)),PWideChar(StrToWide(OldFileName))));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReplaceKey(const KeyName,NewFileName,OldFileName: String): Boolean;
+begin
+Result := CheckErrorCode(RegReplaceKeyW(
+  GetWorkingKey(IsRelativeKeyName(KeyName)),PWideChar(StrToWide(TrimKeyName(KeyName))),
+  PWideChar(StrToWide(NewFileName)),PWideChar(StrToWide(OldFileName))));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ReplaceKey(const NewFileName,OldFileName: String): Boolean;
+begin
+Result := CheckErrorCode(RegReplaceKeyW(GetWorkingKey(True),nil,
+  PWideChar(StrToWide(NewFileName)),PWideChar(StrToWide(OldFileName))));
 end;
 
 //------------------------------------------------------------------------------
@@ -7070,3 +7512,4 @@ finalization
   UnitFinalize;
 
 end.
+
