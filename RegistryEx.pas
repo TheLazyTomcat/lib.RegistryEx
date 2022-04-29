@@ -1,3 +1,48 @@
+{-------------------------------------------------------------------------------
+
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+-------------------------------------------------------------------------------}
+{===============================================================================
+
+  RegistryEx
+
+    Provides class TRegistryEx, which offers similar, but significantly
+    extended, functionality as standard TRegistry class implemented in RTL.
+    
+    Since the interface is slightly different, it is not intended as a direct
+    drop-in replacement.
+
+  Version 1.0 (2022-04-29)
+
+  Last change 2022-04-29
+
+  ©2019-2022 František Milt
+
+  Contacts:
+    František Milt: frantisek.milt@gmail.com
+
+  Support:
+    If you find this code useful, please consider supporting its author(s) by
+    making a small donation using the following link(s):
+
+      https://www.paypal.me/FMilt
+
+  Changelog:
+    For detailed changelog and history please refer to this git repository:
+
+      github.com/TheLazyTomcat/Lib.RegistryEx
+
+  Dependencies:
+    AuxTypes       - github.com/TheLazyTomcat/Lib.AuxTypes
+    AuxClasses     - github.com/TheLazyTomcat/Lib.AuxClasses
+    StrRect        - github.com/TheLazyTomcat/Lib.StrRect
+    DynLibUtils    - github.com/TheLazyTomcat/Lib.DynLibUtils
+    WindowsVersion - github.com/TheLazyTomcat/Lib.WindowsVersion
+
+===============================================================================}
 unit RegistryEx;
 
 {$IF defined(CPU64) or defined(CPU64BITS)}
