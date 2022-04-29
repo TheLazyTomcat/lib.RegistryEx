@@ -222,16 +222,17 @@ const
     System constants - reserved key handles
 -------------------------------------------------------------------------------}
 const
-  HKEY_CLASSES_ROOT                = HKEY($80000000);
-  HKEY_CURRENT_USER                = HKEY($80000001);
-  HKEY_LOCAL_MACHINE               = HKEY($80000002);
-  HKEY_USERS                       = HKEY($80000003);
-  HKEY_PERFORMANCE_DATA            = HKEY($80000004);
-  HKEY_PERFORMANCE_TEXT            = HKEY($80000050);
-  HKEY_PERFORMANCE_NLSTEXT         = HKEY($80000060);
-  HKEY_CURRENT_CONFIG              = HKEY($80000005);
-  HKEY_DYN_DATA                    = HKEY($80000006);
-  HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY($80000007);
+  // the handles must be sign-extended for 64bit OS
+  HKEY_CLASSES_ROOT                = HKEY(PtrInt(Int32($80000000)));
+  HKEY_CURRENT_USER                = HKEY(PtrInt(Int32($80000001)));
+  HKEY_LOCAL_MACHINE               = HKEY(PtrInt(Int32($80000002)));
+  HKEY_USERS                       = HKEY(PtrInt(Int32($80000003)));
+  HKEY_PERFORMANCE_DATA            = HKEY(PtrInt(Int32($80000004)));
+  HKEY_PERFORMANCE_TEXT            = HKEY(PtrInt(Int32($80000050)));
+  HKEY_PERFORMANCE_NLSTEXT         = HKEY(PtrInt(Int32($80000060)));
+  HKEY_CURRENT_CONFIG              = HKEY(PtrInt(Int32($80000005)));
+  HKEY_DYN_DATA                    = HKEY(PtrInt(Int32($80000006)));
+  HKEY_CURRENT_USER_LOCAL_SETTINGS = HKEY(PtrInt(Int32($80000007)));
 
   // short aliases
   HKCR = HKEY_CLASSES_ROOT;
