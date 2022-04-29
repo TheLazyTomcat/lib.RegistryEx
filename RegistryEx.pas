@@ -339,10 +339,27 @@ type
 
   TRXRestoreFlags = set of TRXRestoreFlag;
 
+//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+type
+  TRXNotifyFilterOption = (noNameChange,        // sub key addition or deletion
+                           noAttributeChange,   // key attributes change
+                           noLastSetChange,     // value change/addition/deletetion
+                           noSecurityChange,    // change to security descriptor
+                           noThreadAgnostic);
+
+  TRXNotifyFilter = set of TRXNotifyFilterOption;
+
+const
+  noWaitAll = [noNameChange,noAttributeChange,noLastSetChange,noSecurityChange];
+
+type
+  TRXWaitResult = (wrError,wrTimeout,wrChanged);
+
+Function WaitResultToStr(WaitResult: TRXWaitResult): String;
+
 {===============================================================================
     TRegistryEx - class declaration
 ===============================================================================}
-{$message 'todo: RegNotifyChangeKeyValue'}
 {
   Following functions, when they fail, will store an error code indicating the
   cause of failure in property LastSystemError:
@@ -350,8 +367,11 @@ type
     RegistryQuota*
     DisablePredefinedCache
     ConnectRegistry
+    OpenCurrentUser
+    OpenUserClassesRoot
     OverridePredefinedKey
     RestorePredefinedKey
+    WaitForKeyChange
     OpenKey
     OpenKeyReadOnly
     KeyExists
@@ -450,6 +470,7 @@ type
     Function SetErrorCode(ErrorCode: Integer): Integer; virtual;
     Function CheckErrorCode(ErrorCode: Integer; AllowMoreDataErr: Boolean = False): Boolean; virtual;
     Function SysCallError(CallResult: BOOL): Boolean; virtual;
+    Function WaitForKeyChange(Key: HKEY; Filter: DWORD; WatchSubTree: Boolean; Timeout: DWORD): TRXWaitResult; overload; virtual;
     Function AuxCreateKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY;
       CreateOptions: DWORD = REG_OPTION_NON_VOLATILE; Disposition: LPDWORD = nil): Boolean; overload; virtual;
     Function AuxOpenKey(BaseKey: HKEY; const KeyName: String; AccessRights: DWORD; out NewKey: HKEY): Boolean; overload; virtual;
@@ -462,6 +483,7 @@ type
     Function CurrentKeyIsSubKeyOf(const KeyName: String; Strict: Boolean): Boolean; overload; virtual;    
     Function GetKeyInfo(Key: HKEY; out KeyInfo: TRXKeyInfo): Boolean; overload; virtual;
     Function GetSubKeys(Key: HKEY; SubKeys: TStrings): Boolean; overload; virtual;
+    Function GetSubTree(Key: HKEY; SubKeys: TStrings; const ParentPath: String): Boolean; overload; virtual;
     Function GetValueInfo(Key: HKEY; const ValueName: String; out ValueInfo: TRXValueInfo): Boolean; overload; virtual;
     Function GetValues(Key: HKEY; Values: TStrings): Boolean; overload; virtual;
     Function DeleteSubKeys(Key: HKEY): Boolean; overload; virtual;
@@ -562,6 +584,18 @@ type
  {B}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey; const KeyName: String): Boolean; overload; virtual;
  {D}Function OverridePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; overload; virtual;
     Function RestorePredefinedKey(PredefinedKey: TRXPredefinedKey): Boolean; virtual;
+  {
+    For any kind of failure, the WaitForKeyChange will return wrError.
+
+      WARNING - if called on current key, you must close and re-open the key
+                before next call to WaitForKeyChange, otherwise the function
+                will behave incorrectly. It is therefore recommended to only
+                use first (class A) or second (class B) overload with non-empty
+                key name.
+  }
+ {A}Function WaitForKeyChange(RootKey: TRXPredefinedKey; const KeyName: String; WatchSubTree: Boolean; Filter: TRXNotifyFilter = noWaitAll; Timeout: DWORD = INFINITE): TRXWaitResult; overload; virtual;
+ {B}Function WaitForKeyChange(const KeyName: String; WatchSubTree: Boolean; Filter: TRXNotifyFilter = noWaitAll; Timeout: DWORD = INFINITE): TRXWaitResult; overload; virtual;
+ {C}Function WaitForKeyChange(WatchSubTree: Boolean; Filter: TRXNotifyFilter = noWaitAll; Timeout: DWORD = INFINITE): TRXWaitResult; overload; virtual;
     //--- keys management ---
   {
     Opens or creates requested key as a current key. If current key was already
@@ -638,7 +672,13 @@ type
  {A}Function GetSubKeys(RootKey: TRXPredefinedKey; const KeyName: String; SubKeys: TStrings): Boolean; overload; virtual;
  {B}Function GetSubKeys(const KeyName: String; SubKeys: TStrings): Boolean; overload; virtual;
  {C}Function GetSubKeys(SubKeys: TStrings): Boolean; overload; virtual;
-    {$message 'add GetSubTree'}
+  {
+    SubKeys object is always cleared, irrespective of whether the function
+    succeeds or not.
+  }
+ {A}Function GetSubTree(RootKey: TRXPredefinedKey; const KeyName: String; SubKeys: TStrings): Boolean; overload; virtual;
+ {B}Function GetSubTree(const KeyName: String; SubKeys: TStrings): Boolean; overload; virtual;
+ {C}Function GetSubTree(SubKeys: TStrings): Boolean; overload; virtual;
     //--- values information/access ---
   {
     Functions GetValueInfo, HasValues and GetValues are working the same as
@@ -872,11 +912,11 @@ type
     Function LoadKey(RootKey: TRXPredefinedKey; const KeyName, FileName: String): Boolean; virtual;
     Function UnLoadKey(RootKey: TRXPredefinedKey; const KeyName: String): Boolean; virtual;
   {
-    WARNING - considering how RegReplaceKey (which is internally called) works,
-              using this function can be very dangerous. There is a good chance
-              to completely erase registry hive when used inappropriately.
-              Please refer to documentation of Win32 function RegReplaceKey
-              for details.
+      WARNING - considering how RegReplaceKey (which is internally called)
+                works, using this function can be very dangerous. There is a
+                good chance to completely erase registry hive when used
+                inappropriately. Please refer to documentation of Win32
+                function RegReplaceKey for details.
   }
  {A}Function ReplaceKey(RootKey: TRXPredefinedKey; const KeyName,NewFileName,OldFileName: String): Boolean; overload; virtual;
  {B}Function ReplaceKey(const KeyName,NewFileName,OldFileName: String): Boolean; overload; virtual;
@@ -1922,6 +1962,40 @@ SetResultRestoreFlag(rfNoImpersonationFallback,REG_NO_IMPERSONATION_FALLBACK);
 SetResultRestoreFlag(rfAppHiveOpenReadOnly,REG_APP_HIVE_OPEN_READ_ONLY);
 end;
 
+//------------------------------------------------------------------------------
+
+Function TranslateNotifyFilter(NotifyFilter: TRXNotifyFilter): DWORD;
+
+  procedure SetNotifyFilterOption(NotifyFilterOption: TRXNotifyFilterOption; Flag: DWORD);
+  begin
+    If NotifyFilterOption in NotifyFilter then
+      Result := Result or Flag;
+  end;
+
+begin
+Result := 0;
+SetNotifyFilterOption(noNameChange,REG_NOTIFY_CHANGE_NAME);
+SetNotifyFilterOption(noAttributeChange,REG_NOTIFY_CHANGE_ATTRIBUTES);
+SetNotifyFilterOption(noLastSetChange,REG_NOTIFY_CHANGE_LAST_SET);
+SetNotifyFilterOption(noSecurityChange,REG_NOTIFY_CHANGE_SECURITY);
+SetNotifyFilterOption(noThreadAgnostic,REG_NOTIFY_THREAD_AGNOSTIC);
+end;
+
+{===============================================================================
+    TRegistryEx - public functions
+===============================================================================}
+
+Function WaitResultToStr(WaitResult: TRXWaitResult): String;
+begin
+case WaitResult of
+  wrError:    Result := 'Error';
+  wrTimeout:  Result := 'Timeout';
+  wrChanged:  Result := 'Changed';
+else
+  Result := '<invalid>';
+end;
+end;
+
 {===============================================================================
     TRegistryEx - class declaration
 ===============================================================================}
@@ -2066,6 +2140,34 @@ Function TRegistryEx.SysCallError(CallResult: BOOL): Boolean;
 begin
 fLastSysError := GetLastError;
 Result := CallResult;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.WaitForKeyChange(Key: HKEY; Filter: DWORD; WatchSubTree: Boolean; Timeout: DWORD): TRXWaitResult;
+var
+  WaitEvent:  THandle;
+begin
+Result := wrError;
+WaitEvent := CreateEvent(nil,True,False,nil);
+If WaitEvent <> 0 then
+  try
+    If CheckErrorCode(RegNotifyChangeKeyValue(Key,WatchSubTree,Filter,WaitEvent,True)) then
+      case WaitForSingleObject(WaitEvent,Timeout) of
+        WAIT_OBJECT_0:  Result := wrChanged;
+        WAIT_TIMEOUT:   Result := wrTimeout;
+        WAIT_FAILED:    begin
+                          Result := wrError;
+                          SetErrorCode(GetLastError);
+                        end;
+      else
+        Result := wrError;
+        SetErrorCode(ERROR_INVALID_DATA);
+      end;
+  finally
+    CloseHandle(WaitEvent);
+  end
+else SetErrorCode(GetLastError);
 end;
 
 //------------------------------------------------------------------------------
@@ -2241,6 +2343,55 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.GetSubTree(Key: HKEY; SubKeys: TStrings; const ParentPath: String): Boolean;
+var
+  i:        Integer;
+  Buffer:   WideString;
+  Len:      DWORD;
+  TempStr:  String;
+  SubKey:   HKEY;
+begin
+// do not clear the list, this function is called recursively
+Result := False;
+i := 0;
+SetLength(Buffer,255 + 1);
+while True do
+  begin
+    Len := Length(Buffer);
+    case SetErrorCode(RegEnumKeyExW(Key,DWORD(i),PWideChar(Buffer),Len,nil,nil,nil,nil)) of
+      ERROR_SUCCESS:
+        begin
+          // recurse
+          TempStr := WideToStr(Copy(Buffer,1,Len));
+          SubKeys.Add(ConcatKeyNames(ParentPath,TempStr));
+          If AuxOpenKey(Key,TempStr,KEY_ENUMERATE_SUB_KEYS,SubKey) then
+            try
+              If not GetSubTree(SubKey,SubKeys,SubKeys[Pred(SubKeys.Count)]) then
+                Break{while};
+            finally
+              AuxCloseKey(SubKey);
+            end
+          else Break{while};
+        end;
+      ERROR_MORE_DATA:
+        begin
+          SetLength(Buffer,Length(Buffer) * 2);
+          Dec(i);
+        end;
+      ERROR_NO_MORE_ITEMS:
+        begin
+          Result := True;
+          Break{while};
+        end;
+    else
+      Break{while};
+    end;
+    Inc(i);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.GetValueInfo(Key: HKEY; const ValueName: String; out ValueInfo: TRXValueInfo): Boolean;
 var
   ValueType:  DWORD;
@@ -2333,6 +2484,7 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5057{$ENDIF}
 Function TRegistryEx.QueryProcessPrivilege(const PrivilegeName: String): TRXPrivilegeStatus;
 var
   Token:        THandle;
@@ -2377,9 +2529,11 @@ If SysCallError(OpenProcessToken(GetCurrentProcess,TOKEN_QUERY,Token)) then
     CloseHandle(Token);
   end;
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5057{$ENDIF}
 Function TRegistryEx.SetProcessPrivilege(const PrivilegeName: String; Enable: Boolean): Boolean;
 var
   Token:            THandle;
@@ -2402,6 +2556,7 @@ If SysCallError(OpenProcessToken(GetCurrentProcess,TOKEN_QUERY or TOKEN_ADJUST_P
     CloseHandle(Token);
   end;
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -2423,55 +2578,6 @@ Function TRegistryEx.MoveKey(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseK
       Result := WRITE_DAC or WRITE_OWNER
     else
       Result := 0;
-  end;
-
-//--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-
-  Function ListSubKeys(Key: HKEY; List: TStrings; const ParentPath: String = ''): Boolean;
-  var
-    i:        Integer;
-    Buffer:   WideString;
-    Len:      DWORD;
-    TempStr:  String;
-    SubKey:   HKEY;
-  begin
-    // do not clear the list, this function is called recursively
-    Result := False;
-    i := 0;
-    SetLength(Buffer,255 + 1);
-    while True do
-      begin
-        Len := Length(Buffer);
-        case SetErrorCode(RegEnumKeyExW(Key,DWORD(i),PWideChar(Buffer),Len,nil,nil,nil,nil)) of
-          ERROR_SUCCESS:
-            begin
-              // recurse
-              TempStr := WideToStr(Copy(Buffer,1,Len));
-              List.Add(ConcatKeyNames(ParentPath,TempStr));
-              If AuxOpenKey(Key,TempStr,KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,SubKey) then
-                try
-                  If not ListSubKeys(SubKey,List,List[Pred(List.Count)]) then
-                    Break{while};
-                finally
-                  AuxCloseKey(SubKey);
-                end
-              else Break{while};
-            end;
-          ERROR_MORE_DATA:
-            begin
-              SetLength(Buffer,Length(Buffer) * 2);
-              Dec(i);
-            end;
-          ERROR_NO_MORE_ITEMS:
-            begin
-              Result := True;
-              Break{while};
-            end;
-        else
-          Break{while};
-        end;
-        Inc(i);
-      end;
   end;
 
 //--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
@@ -2716,7 +2822,7 @@ If AuxOpenKey(SrcBaseKey,SrcSubKey,SrcSecAccRights or KEY_ENUMERATE_SUB_KEYS or
     SrcSubKeys := TStringList.Create;
     try
       // list complete subkey tree of the source
-      If ListSubKeys(SrcKey,SrcSubKeys) then
+      If GetSubTree(SrcKey,SrcSubKeys,'') then
         // create destination key
         If AuxCreateKey(DstBaseKey,DstSubKey,DstSecAccRights or KEY_CREATE_SUB_KEY or
           KEY_SET_VALUE,DstKey,REG_OPTION_NON_VOLATILE,@Disposition) then
@@ -3550,6 +3656,43 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TRegistryEx.WaitForKeyChange(RootKey: TRXPredefinedKey; const KeyName: String; WatchSubTree: Boolean; Filter: TRXNotifyFilter = noWaitAll; Timeout: DWORD = INFINITE): TRXWaitResult;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_NOTIFY,TempKey) then
+  try
+    Result := WaitForKeyChange(TempKey,TranslateNotifyFilter(Filter),WatchSubTree,Timeout);
+  finally
+    AuxCloseKey(TempKey);
+  end
+else Result := wrError;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.WaitForKeyChange(const KeyName: String; WatchSubTree: Boolean; Filter: TRXNotifyFilter = noWaitAll; Timeout: DWORD = INFINITE): TRXWaitResult;
+var
+  TempKey:  HKEY;
+begin
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_NOTIFY,TempKey) then
+  try
+    Result := WaitForKeyChange(TempKey,TranslateNotifyFilter(Filter),WatchSubTree,Timeout);
+  finally
+    AuxCloseKey(TempKey);
+  end
+else Result := wrError;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.WaitForKeyChange(WatchSubTree: Boolean; Filter: TRXNotifyFilter = noWaitAll; Timeout: DWORD = INFINITE): TRXWaitResult;
+begin
+Result := WaitForKeyChange(GetWorkingKey(True),TranslateNotifyFilter(Filter),WatchSubTree,Timeout);
+end;
+
+//------------------------------------------------------------------------------
+
 Function TRegistryEx.OpenKey(RootKey: TRXPredefinedKey; const KeyName: String; CanCreate: Boolean; out Created: Boolean; CreateOptions: TRXKeyCreateOptions = [kcoNonVolatile]): Boolean;
 var
   TempKey:      HKEY;
@@ -3952,7 +4095,7 @@ var
   TempKey:  HKEY;
 begin
 Result := False;
-If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,TempKey) then
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
   try
     Result := GetSubKeys(TempKey,SubKeys);
   finally
@@ -3968,7 +4111,7 @@ var
   TempKey:  HKEY;
 begin
 Result := False;
-If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE,TempKey) then
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
   try
     Result := GetSubKeys(TempKey,SubKeys);
   finally
@@ -3982,6 +4125,48 @@ end;
 Function TRegistryEx.GetSubKeys(SubKeys: TStrings): Boolean;
 begin
 Result := GetSubKeys(GetWorkingKey(True),SubKeys);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.GetSubTree(RootKey: TRXPredefinedKey; const KeyName: String; SubKeys: TStrings): Boolean;
+var
+  TempKey:  HKEY;
+begin
+Result := False;
+SubKeys.Clear;
+If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
+  try
+    Result := GetSubTree(TempKey,SubKeys,'');
+  finally
+    AuxCloseKey(TempKey);
+  end
+else SubKeys.Clear;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetSubTree(const KeyName: String; SubKeys: TStrings): Boolean;
+var
+  TempKey:  HKEY;
+begin
+Result := False;
+SubKeys.Clear;
+If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS,TempKey) then
+  try
+    Result := GetSubTree(TempKey,SubKeys,'');
+  finally
+    AuxCloseKey(TempKey);
+  end
+else SubKeys.Clear;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.GetSubTree(SubKeys: TStrings): Boolean;
+begin
+SubKeys.Clear;
+Result := GetSubTree(GetWorkingKey(True),SubKeys,'');
 end;
 
 //------------------------------------------------------------------------------
@@ -4366,7 +4551,7 @@ var
 begin
 CurrentKeyClosed := False;
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),
-  KEY_ENUMERATE_SUB_KEYS or KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+  KEY_ENUMERATE_SUB_KEYS or KEY_SET_VALUE,TempKey) then
   try
     Result := DeleteSubKeys(TempKey);
     // close current key if it was deleted
@@ -4391,8 +4576,7 @@ var
 begin
 CurrentKeyClosed := False;
 WorkingKey := GetWorkingKey(IsRelativeKeyName(KeyName),WorkingKeyName);
-If AuxOpenKey(WorkingKey,TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or
-  KEY_QUERY_VALUE or KEY_SET_VALUE,TempKey) then
+If AuxOpenKey(WorkingKey,TrimKeyName(KeyName),KEY_ENUMERATE_SUB_KEYS or KEY_SET_VALUE,TempKey) then
   try
     Result := DeleteSubKeys(TempKey);
     If CurrentKeyIsSubKeyOf(ConcatKeyNames(WorkingKeyName,TrimKeyName(KeyName)),True) then
