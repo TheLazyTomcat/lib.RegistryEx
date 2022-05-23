@@ -15,9 +15,9 @@
     Since the interface is slightly different, it is not intended as a direct
     drop-in replacement.
 
-  Version 1.0 (2022-04-29)
+  Version 1.1 (2022-05-23)
 
-  Last change 2022-04-29
+  Last change 2022-05-23
 
   ©2019-2022 František Milt
 
@@ -376,14 +376,12 @@ type
 
 //--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
 type
-  TRXRestoreFlag = (rfWholeHiveVolatile,rfRefreshHive,rfNoLazyFlush,
+  TRXRestoreFlag = (rfNone,rfWholeHiveVolatile,rfRefreshHive,rfNoLazyFlush,
                     rfForceRestore,rfAppHive,rfProcessPrivate,rfStartJournal,
                     rfHiveExactFileGrowth,rfHiveNoRM,rfHiveSingleLog,
                     rfBootHive,rfLoadHiveOpenHandle,rfFlushHiveFileGrowth,
                     rfOpenReadOnly,rfImmutable,rfNoImpersonationFallback,
                     rfAppHiveOpenReadOnly);
-
-  TRXRestoreFlags = set of TRXRestoreFlag;
 
 //--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
 type
@@ -451,6 +449,7 @@ Function WaitResultToStr(WaitResult: TRXWaitResult): String;
     LoadKey
     UnloadKey
     ReplaceKey
+    ExportKey
     TryRead*
     Read*Def
 
@@ -536,6 +535,7 @@ type
     Function DeleteValues(Key: HKEY): Boolean; overload; virtual;
     Function QueryProcessPrivilege(const PrivilegeName: String): TRXPrivilegeStatus; virtual;
     Function SetProcessPrivilege(const PrivilegeName: String; Enable: Boolean): Boolean; virtual;
+    Function ExecuteRegCommand(const Command: String): Boolean;
     //--- copy/move auxiliaty methods ---
     Function MoveKey(SrcBaseKey: HKEY; const SrcSubKey: String; DstBaseKey: HKEY; const DstSubKey: String; CopySecurity,DeleteSource: Boolean): Boolean; overload; virtual;
     Function MoveValue(SrcKey: HKEY; const SrcValueName: String; DstKey: HKEY; const DstValueName: String; DeleteSource: Boolean): Boolean; overload; virtual;
@@ -947,9 +947,9 @@ type
  {A}Function SaveKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean; overload; virtual;
  {B}Function SaveKey(const KeyName,FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean; overload; virtual;
  {C}Function SaveKey(const FileName: String; FileFormat: TRXFileFormat = ffStandardFormat): Boolean; overload; virtual;
- {A}Function RestoreKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean; overload; virtual;
- {B}Function RestoreKey(const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean; overload; virtual;
- {C}Function RestoreKey(const FileName: String; Flags: TRXRestoreFlags = []): Boolean; overload; virtual;
+ {A}Function RestoreKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; Flag: TRXRestoreFlag = rfNone): Boolean; overload; virtual;
+ {B}Function RestoreKey(const KeyName,FileName: String; Flag: TRXRestoreFlag = rfNone): Boolean; overload; virtual;
+ {C}Function RestoreKey(const FileName: String; Flag: TRXRestoreFlag = rfNone): Boolean; overload; virtual;
   {
     RootKey parameter in LoadKey and UnLoadKey can only be set to pkUsers or
     pkLocalMachine, otherwise the function will fail.
@@ -967,6 +967,10 @@ type
  {A}Function ReplaceKey(RootKey: TRXPredefinedKey; const KeyName,NewFileName,OldFileName: String): Boolean; overload; virtual;
  {B}Function ReplaceKey(const KeyName,NewFileName,OldFileName: String): Boolean; overload; virtual;
  {C}Function ReplaceKey(const NewFileName,OldFileName: String): Boolean; overload; virtual;
+ {A}Function ExportKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String): Boolean; overload; virtual;
+ {B}Function ExportKey(const KeyName,FileName: String): Boolean; overload; virtual;
+ {C}Function ExportKey(const FileName: String): Boolean; overload; virtual;
+    Function ImportKey(const FileName: String): Boolean; virtual;
     //--- values write ---
   {
     When writing to other key than current or predefined, the key must already
@@ -1353,11 +1357,13 @@ uses
     TRegistryEx - external/system functions and constants
 ===============================================================================}
 const
-  UNICODE_STRING_MAX_CHARS = 32767;
-  _DELETE                  = $00010000; // cannot use "DELETE" - conflict with function of the same name
-  READ_CONTROL             = $00020000;
-  ERROR_INCORRECT_SIZE     = 1462;
-  ERROR_DATATYPE_MISMATCH  = 1629;
+  UNICODE_STRING_MAX_CHARS     = 32767;
+  _DELETE                      = $00010000; // cannot use "DELETE" - conflict with function of the same name
+  READ_CONTROL                 = $00020000;
+  ERROR_INCORRECT_SIZE         = 1462;
+  ERROR_DATATYPE_MISMATCH      = 1629;
+  ERROR_GENERIC_COMMAND_FAILED = 14109;
+  BELOW_NORMAL_PRIORITY_CLASS  = $00004000;
 
 type
   LONG              = LongInt;
@@ -1368,8 +1374,42 @@ type
   LUID              = Int64;
 
 //------------------------------------------------------------------------------
-
 // statically linked functions
+
+TStartupInfoW = record
+  cb:               DWORD;
+  lpReserved:       LPWSTR;
+  lpDesktop:        LPWSTR;
+  lpTitle:          LPWSTR;
+  dwX:              DWORD;
+  dwY:              DWORD;
+  dwXSize:          DWORD;
+  dwYSize:          DWORD;
+  dwXCountChars:    DWORD;
+  dwYCountChars:    DWORD;
+  dwFillAttribute:  DWORD;
+  dwFlags:          DWORD;
+  wShowWindow:      WORD;
+  cbReserved2:      WORD;
+  lpReserved2:      LPBYTE;
+  hStdInput:        HANDLE;
+  hStdOutput:       HANDLE;
+  hStdError:        HANDLE;
+end;
+PStartupInfoW = ^TStartupInfoW;
+
+Function CreateProcessW(
+  lpApplicationName:    LPCWSTR;
+  lpCommandLine:        LPWSTR;
+  lpProcessAttributes:  PSecurityAttributes;
+  lpThreadAttributes:   PSecurityAttributes;
+  bInheritHandles:      BOOL;
+  dwCreationFlags:      DWORD;
+  lpEnvironment:        Pointer;
+  lpCurrentDirectory:   LPCWSTR;
+  lpStartupInfo:        PStartupInfoW;
+  lpProcessInformation: PProcessInformation): BOOL; stdcall; external 'kernel32.dll';
+
 Function GetSystemRegistryQuota(pdwQuotaAllowed: PDWORD; pdwQuotaUsed: PDWORD): BOOL; stdcall; external 'kernel32.dll';
 
 Function RegOverridePredefKey(hKey: HKEY; hNewHKey: HKEY): LONG; stdcall; external 'advapi32.dll';
@@ -1388,8 +1428,7 @@ Function RegEnumValueW(
   lpReserved:     LPDWORD;
   lpType:         LPDWORD;
   lpData:         LPBYTE;
-  lpcbData:       LPDWORD
-): LSTATUS; stdcall; external 'advapi32.dll';
+  lpcbData:       LPDWORD): LSTATUS; stdcall; external 'advapi32.dll';
 
 Function AdjustTokenPrivileges(
   TokenHandle:          HANDLE;
@@ -1406,8 +1445,8 @@ Function SHDeleteKeyW(hkey: HKEY; pszSubKey: LPCWSTR): LSTATUS; stdcall; externa
 Function PathUnExpandEnvStringsW(pszPath: LPCWSTR; pszBuf: LPWSTR; cchBuf: UINT): BOOL; stdcall; external 'shlwapi.dll';
 
 //------------------------------------------------------------------------------
-
 // dynamically linked functions (might not be present on all systems - namely Windows XP)
+
 var
   RegQueryReflectionKey:        Function(hBase: HKEY; bIsReflectionDisabled: PBOOL): LONG; stdcall = nil;
   RegEnableReflectionKey:       Function(hBase: HKEY): LONG; stdcall = nil;
@@ -1979,33 +2018,30 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TranslateRestoreFlags(RestoreFlags: TRXRestoreFlags): DWORD;
-
-  procedure SetResultRestoreFlag(RestoreFlag: TRXRestoreFlag; Flag: DWORD);
-  begin
-    If RestoreFlag in RestoreFlags then
-      Result := Result or Flag;
-  end;
-
+Function TranslateRestoreFlag(RestoreFlag: TRXRestoreFlag): DWORD;
 begin
-Result := 0;
-SetResultRestoreFlag(rfWholeHiveVolatile,REG_WHOLE_HIVE_VOLATILE);
-SetResultRestoreFlag(rfRefreshHive,REG_REFRESH_HIVE);
-SetResultRestoreFlag(rfNoLazyFlush,REG_NO_LAZY_FLUSH);
-SetResultRestoreFlag(rfForceRestore,REG_FORCE_RESTORE);
-SetResultRestoreFlag(rfAppHive,REG_APP_HIVE);
-SetResultRestoreFlag(rfProcessPrivate,REG_PROCESS_PRIVATE);
-SetResultRestoreFlag(rfStartJournal,REG_START_JOURNAL);
-SetResultRestoreFlag(rfHiveExactFileGrowth,REG_HIVE_EXACT_FILE_GROWTH);
-SetResultRestoreFlag(rfHiveNoRM,REG_HIVE_NO_RM);
-SetResultRestoreFlag(rfHiveSingleLog,REG_HIVE_SINGLE_LOG);
-SetResultRestoreFlag(rfBootHive,REG_BOOT_HIVE);
-SetResultRestoreFlag(rfLoadHiveOpenHandle,REG_LOAD_HIVE_OPEN_HANDLE);
-SetResultRestoreFlag(rfFlushHiveFileGrowth,REG_FLUSH_HIVE_FILE_GROWTH);
-SetResultRestoreFlag(rfOpenReadOnly,REG_OPEN_READ_ONLY);
-SetResultRestoreFlag(rfImmutable,REG_IMMUTABLE);
-SetResultRestoreFlag(rfNoImpersonationFallback,REG_NO_IMPERSONATION_FALLBACK);
-SetResultRestoreFlag(rfAppHiveOpenReadOnly,REG_APP_HIVE_OPEN_READ_ONLY);
+case RestoreFlag of
+  rfNone:                     Result := 0;
+  rfWholeHiveVolatile:        Result := REG_WHOLE_HIVE_VOLATILE;
+  rfRefreshHive:              Result := REG_REFRESH_HIVE;
+  rfNoLazyFlush:              Result := REG_NO_LAZY_FLUSH;
+  rfForceRestore:             Result := REG_FORCE_RESTORE;
+  rfAppHive:                  Result := REG_APP_HIVE;
+  rfProcessPrivate:           Result := REG_PROCESS_PRIVATE;
+  rfStartJournal:             Result := REG_START_JOURNAL;
+  rfHiveExactFileGrowth:      Result := REG_HIVE_EXACT_FILE_GROWTH;
+  rfHiveNoRM:                 Result := REG_HIVE_NO_RM;
+  rfHiveSingleLog:            Result := REG_HIVE_SINGLE_LOG;
+  rfBootHive:                 Result := REG_BOOT_HIVE;
+  rfLoadHiveOpenHandle:       Result := REG_LOAD_HIVE_OPEN_HANDLE;
+  rfFlushHiveFileGrowth:      Result := REG_FLUSH_HIVE_FILE_GROWTH;
+  rfOpenReadOnly:             Result := REG_OPEN_READ_ONLY;
+  rfImmutable:                Result := REG_IMMUTABLE;
+  rfNoImpersonationFallback:  Result := REG_NO_IMPERSONATION_FALLBACK;
+  rfAppHiveOpenReadOnly:      Result := REG_APP_HIVE_OPEN_READ_ONLY;
+else
+  raise ERXInvalidValue.CreateFmt('TranslateRestoreFlag: Invalid flag (%d).',[Ord(RestoreFlag)]);
+end;
 end;
 
 //------------------------------------------------------------------------------
@@ -2600,6 +2636,47 @@ If SysCallError(OpenProcessToken(GetCurrentProcess,TOKEN_QUERY or TOKEN_ADJUST_P
       end;
   finally
     CloseHandle(Token);
+  end;
+end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
+
+//------------------------------------------------------------------------------
+
+{$IFDEF FPCDWM}{$PUSH}W5057{$ENDIF}
+Function TRegistryEx.ExecuteRegCommand(const Command: String): Boolean;
+var
+  StartupInfo:  TStartupInfoW;
+  ProcessInfo:  TProcessInformation;
+  TempCmdLine:  WideString;
+  ExitCode:     DWORD;
+begin
+Result := False;
+FillChar(Addr(StartupInfo)^,SizeOf(StartupInfo),0);
+StartupInfo.cb := SizeOf(StartupInfo);
+StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
+StartupInfo.wShowWindow := SW_HIDE;
+{
+  Since CreateProcessW can change content of the command line string, it is
+  necessary to ensure it is in a writable memory (variable).
+}
+TempCmdLine := StrToWide('REG ' + Command);
+If SysCallError(CreateProcessW(nil,PWideChar(TempCmdLine),nil,nil,False,CREATE_NO_WINDOW or
+  BELOW_NORMAL_PRIORITY_CLASS,nil,nil,Addr(StartupInfo),@ProcessInfo)) then
+  begin
+    case WaitForSingleObject(ProcessInfo.hProcess,INFINITE) of
+      WAIT_OBJECT_0:  If SysCallError(GetExitCodeProcess(ProcessInfo.hProcess,ExitCode)) then
+                        begin
+                          Result := ExitCode = 0;
+                          If not Result then
+                            SetErrorCode(ERROR_GENERIC_COMMAND_FAILED);
+                        end;
+      WAIT_ABANDONED,
+      WAIT_TIMEOUT:   SetErrorCode(ERROR_INVALID_DATA);
+    else
+      SetErrorCode(GetLastError);
+    end;
+    CloseHandle(ProcessInfo.hThread);
+    CloseHandle(ProcessInfo.hProcess);
   end;
 end;
 {$IFDEF FPCDWM}{$POP}{$ENDIF}
@@ -5399,13 +5476,13 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TRegistryEx.RestoreKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean;
+Function TRegistryEx.RestoreKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String; Flag: TRXRestoreFlag = rfNone): Boolean;
 var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(TranslatePredefinedKey(RootKey),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
   try
-    Result := CheckErrorCode(RegRestoreKeyW(TempKey,PWideChar(StrToWide(FileName)),TranslateRestoreFlags(Flags)));
+    Result := CheckErrorCode(RegRestoreKeyW(TempKey,PWideChar(StrToWide(FileName)),TranslateRestoreFlag(Flag)));
   finally
     AuxCloseKey(TempKey);
   end
@@ -5414,13 +5491,13 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.RestoreKey(const KeyName,FileName: String; Flags: TRXRestoreFlags = []): Boolean;
+Function TRegistryEx.RestoreKey(const KeyName,FileName: String; Flag: TRXRestoreFlag = rfNone): Boolean;
 var
   TempKey:  HKEY;
 begin
 If AuxOpenKey(GetWorkingKey(IsRelativeKeyName(KeyName)),TrimKeyName(KeyName),STANDARD_RIGHTS_READ,TempKey) then
   try
-    Result := CheckErrorCode(RegRestoreKeyW(TempKey,PWideChar(StrToWide(FileName)),TranslateRestoreFlags(Flags)));
+    Result := CheckErrorCode(RegRestoreKeyW(TempKey,PWideChar(StrToWide(FileName)),TranslateRestoreFlag(Flag)));
   finally
     AuxCloseKey(TempKey);
   end
@@ -5429,9 +5506,9 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TRegistryEx.RestoreKey(const FileName: String; Flags: TRXRestoreFlags = []): Boolean;
+Function TRegistryEx.RestoreKey(const FileName: String; Flag: TRXRestoreFlag = rfNone): Boolean;
 begin
-Result := CheckErrorCode(RegRestoreKeyW(GetWorkingKey(True),PWideChar(StrToWide(FileName)),TranslateRestoreFlags(Flags)));
+Result := CheckErrorCode(RegRestoreKeyW(GetWorkingKey(True),PWideChar(StrToWide(FileName)),TranslateRestoreFlag(Flag)));
 end;
 
 //------------------------------------------------------------------------------
@@ -5473,6 +5550,41 @@ Function TRegistryEx.ReplaceKey(const NewFileName,OldFileName: String): Boolean;
 begin
 Result := CheckErrorCode(RegReplaceKeyW(GetWorkingKey(True),nil,
   PWideChar(StrToWide(NewFileName)),PWideChar(StrToWide(OldFileName))));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ExportKey(RootKey: TRXPredefinedKey; const KeyName,FileName: String): Boolean;
+begin
+Result := ExecuteRegCommand(Format('EXPORT "%s" "%s"',[ConcatKeyNames(PredefinedKeyToShortStr(RootKey),TrimKeyName(KeyName)),FileName]));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ExportKey(const KeyName,FileName: String): Boolean;
+var
+  WorkKey:  String;
+begin
+GetWorkingKey(IsRelativeKeyName(KeyName),WorkKey);
+Result := ExecuteRegCommand(Format('EXPORT "%s" "%s"',[
+  ConcatKeyNames(ConcatKeyNames(PredefinedKeyToShortStr(fRootKey),WorkKey),TrimKeyName(KeyName)),FileName]));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TRegistryEx.ExportKey(const FileName: String): Boolean;
+var
+  WorkKey:  String;
+begin
+GetWorkingKey(True,WorkKey);
+Result := ExecuteRegCommand(Format('EXPORT "%s" "%s"',[ConcatKeyNames(PredefinedKeyToShortStr(fRootKey),WorkKey),FileName]));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TRegistryEx.ImportKey(const FileName: String): Boolean;
+begin
+Result := ExecuteRegCommand(Format('IMPORT "%s"',[FileName]));
 end;
 
 //------------------------------------------------------------------------------
