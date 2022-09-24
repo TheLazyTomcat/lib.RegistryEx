@@ -17,7 +17,7 @@
 
   Version 1.1 (2022-05-23)
 
-  Last change 2022-05-23
+  Last change 2022-09-24
 
   ©2019-2022 František Milt
 
@@ -41,6 +41,7 @@
     StrRect        - github.com/TheLazyTomcat/Lib.StrRect
     DynLibUtils    - github.com/TheLazyTomcat/Lib.DynLibUtils
     WindowsVersion - github.com/TheLazyTomcat/Lib.WindowsVersion
+    SimpleCPUID    - github.com/TheLazyTomcat/Lib.SimpleCPUID
 
 ===============================================================================}
 unit RegistryEx;
